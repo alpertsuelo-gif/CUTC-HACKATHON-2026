@@ -1,0 +1,26 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environment
+.venv/
+venv/
+
+# Environment variables / API keys
+.env
+
+# IDE files
+.vscode/
+.idea/
+
+# PyTorch checkpoints
+*.pth
+*.ckpt
+
+# Large datasets
+data/raw/
+data/processed/
+
+# OS files
+.DS_Store
+Thumbs.db
