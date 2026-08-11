@@ -552,6 +552,3 @@ def grade_product(product):
         }
     }
 
-result = grade_product(product)
-
-print(result)
