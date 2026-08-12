@@ -1,1 +1,1 @@
-# CUTC-HACKATHON-2026
+# Ceres
