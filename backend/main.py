@@ -189,29 +189,25 @@ async def scan(file: UploadFile = File(...)):
         # 1. Scan barcode
         scanned = scan_product(temp_path)
 
-        # 2. Resolve product data
-        if "error" not in scanned:
-            product_data = scanned
+        barcode = scanned.get("barcode")
 
-        else:
-            barcode = scanned.get("barcode")
+        if not barcode:
+            raise HTTPException(
+                status_code=404,
+                detail=scanned.get(
+                    "error",
+                    "Could not identify barcode",
+                ),
+            )
 
-            if not barcode:
-                raise HTTPException(
-                    status_code=404,
-                    detail=scanned.get(
-                        "error",
-                        "Could not identify barcode",
-                    ),
-                )
+        # 2. Resolve product data via Open Food Facts
+        product_data = get_product(barcode)
 
-            product_data = get_product(barcode)
-
-            if "error" in product_data:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Product not found for the scanned barcode",
-                )
+        if "error" in product_data:
+            raise HTTPException(
+                status_code=404,
+                detail="Product not found for the scanned barcode",
+            )
 
         # 3. Convert dictionary into Product
         product = dict_to_product(product_data)
