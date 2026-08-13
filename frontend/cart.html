@@ -23,6 +23,163 @@
     <div id="recommendations-list" class="recommendations-list"></div>
   </div>
 
+  <script>
+    const API_BASE = 'http://localhost:8000';
+    const gradeColors = { A: "#2e7d32", B: "#8bc34a", C: "#fbc02d", D: "#ef6c00", E: "#c62828" };
+
+    async function loadCart() {
+      try {
+        const res = await fetch(`${API_BASE}/cart`);
+        if (!res.ok) throw new Error('Failed to load cart');
+        const data = await res.json();
+        renderCart(data.items || []);
+      } catch (err) {
+        console.error("Failed to load cart:", err);
+      }
+      
+      try {
+        const res2 = await fetch(`${API_BASE}/cart/analysis`);
+        if (!res2.ok) throw new Error('Failed to load analysis');
+        const analysis = await res2.json();
+        renderSummary(analysis);
+      } catch (err) {
+        console.error("Failed to load analysis:", err);
+      }
+
+      // Load recommendations
+      try {
+        const res3 = await fetch(`${API_BASE}/recommendations`);
+        if (!res3.ok) throw new Error('Failed to load recommendations');
+        const recommendations = await res3.json();
+        renderRecommendations(recommendations);
+      } catch (err) {
+        console.error("Failed to load recommendations:", err);
+      }
+    }
+
+    function renderCart(items) {
+      const list = document.getElementById("cart-list");
+      const empty = document.getElementById("cart-empty");
+      list.querySelectorAll(".cart-item").forEach(el => el.remove());
+
+      if (!items || items.length === 0) {
+        empty.classList.remove("hidden");
+        return;
+      }
+      empty.classList.add("hidden");
+
+      items.forEach(item => {
+        const product = item.product || {};
+        const grading = item.grading || {};
+        const grade = grading.grade || "?";
+        const color = gradeColors[grade] || "#999";
+
+        const card = document.createElement("div");
+        card.className = "cart-item glass-card";
+        card.innerHTML = `
+          <div class="cart-item-info">
+            <p class="cart-item-name">${product.name || "Unknown product"}</p>
+            <p class="cart-item-brand">${product.brand || ""}</p>
+            <p class="cart-item-barcode">Barcode: ${product.barcode || ""}</p>
+          </div>
+          <div class="cart-item-grade" style="background:${color}">${grade}</div>
+          <button class="cart-item-remove" data-barcode="${product.barcode}">✕</button>
+        `;
+        list.appendChild(card);
+      });
+
+      list.querySelectorAll(".cart-item-remove").forEach(btn => {
+        btn.addEventListener("click", () => removeItem(btn.dataset.barcode));
+      });
+    }
+
+    function renderSummary(analysis) {
+      const summary = document.getElementById("cart-summary");
+      if (!analysis || analysis.total_items === 0) {
+        summary.classList.add("hidden");
+        return;
+      }
+      summary.classList.remove("hidden");
+
+      const gradeBits = Object.entries(analysis.grades || {})
+        .filter(([, count]) => count > 0)
+        .map(([grade, count]) => `<span class="grade-pill" style="background:${gradeColors[grade]}">${grade}: ${count}</span>`)
+        .join("");
+
+      summary.innerHTML = `
+        <p class="summary-title">${analysis.total_items} item${analysis.total_items === 1 ? "" : "s"} in cart</p>
+        <div class="grade-pills">${gradeBits}</div>
+        ${analysis.low_rated_items && analysis.low_rated_items.length
+          ? `<p class="summary-warning">⚠ ${analysis.low_rated_items.length} low-rated item(s)</p>` : ""}
+      `;
+    }
+
+    function renderRecommendations(recommendations) {
+      const section = document.getElementById("recommendations-section");
+      const list = document.getElementById("recommendations-list");
+      
+      if (!recommendations || (Array.isArray(recommendations) && recommendations.length === 0) || 
+          (typeof recommendations === 'object' && Object.keys(recommendations).length === 0)) {
+        section.classList.add("hidden");
+        return;
+      }
+
+      section.classList.remove("hidden");
+      list.innerHTML = '';
+
+      // Handle both array and object formats
+      const items = Array.isArray(recommendations) ? recommendations : Object.values(recommendations);
+      
+      items.forEach(item => {
+        const product = item.product || item;
+        const reason = item.reason || item.recommendation_reason || 'Recommended for you';
+        
+        const card = document.createElement("div");
+        card.className = "recommendation-card glass-card";
+        card.innerHTML = `
+          <div class="recommendation-info">
+            <p class="recommendation-name">${product.name || "Product"}</p>
+            <p class="recommendation-brand">${product.brand || ""}</p>
+            <p class="recommendation-reason">💡 ${reason}</p>
+          </div>
+          <button class="recommendation-add" data-barcode="${product.barcode}">+ Add</button>
+        `;
+        list.appendChild(card);
+      });
+
+      list.querySelectorAll(".recommendation-add").forEach(btn => {
+        btn.addEventListener("click", () => addRecommendedProduct(btn.dataset.barcode));
+      });
+    }
+
+    async function addRecommendedProduct(barcode) {
+      try {
+        const response = await fetch(`${API_BASE}/cart/add/${barcode}`, {
+          method: 'POST'
+        });
+        if (!response.ok) throw new Error('Failed to add to cart');
+        loadCart();
+      } catch (err) {
+        console.error("Failed to add recommended product:", err);
+      }
+    }
+
+    async function removeItem(barcode) {
+      try {
+        await fetch(`${API_BASE}/cart/${barcode}`, {
+          method: 'DELETE'
+        });
+        loadCart();
+      } catch (err) {
+        console.error("Failed to remove item:", err);
+      }
+    }
+
+    loadCart();
+    // Reload cart every 2 seconds
+    setInterval(loadCart, 2000);
+  </script>
+
   <footer class="bottom-nav">
     <a href="home.html" class="nav-item">
       <svg viewBox="0 0 24 24" class="nav-icon"><path d="M12 3l9 8h-3v9h-5v-6H11v6H6v-9H3z"/></svg>
