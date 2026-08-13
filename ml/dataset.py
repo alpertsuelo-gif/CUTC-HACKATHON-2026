@@ -1,0 +1,1 @@
+# reads json/products.json forr training, converting json into something AI can use

@@ -1,0 +1,1 @@
+# using dataset and model, train the AI and put the biases and weights into food_classifier.pt
