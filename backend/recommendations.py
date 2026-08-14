@@ -1,4 +1,4 @@
-# recommendation.py
+# recommendations.py
 #
 # Cart recommendation layer.
 #
