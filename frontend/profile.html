@@ -7,6 +7,43 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
+  <div class="scan-options">
+    <h1 class="ceres-title" style="font-size:2.4rem;">Your Profile</h1>
+    <p class="ceres-quote">Set this once — it shapes every scan.</p>
+  </div>
+
+  <div class="pref-section glass-card">
+    <h2 class="pref-heading">Dietary goal</h2>
+    <p class="pref-subtext">Pick the one that matters most right now.</p>
+    <div class="pref-pill-group" id="goal-group">
+      <button class="pref-pill" data-goal="balanced">Balanced</button>
+      <button class="pref-pill" data-goal="low_sugar">Low Sugar</button>
+      <button class="pref-pill" data-goal="low_sodium">Low Sodium</button>
+      <button class="pref-pill" data-goal="high_protein">High Protein</button>
+      <button class="pref-pill" data-goal="weight_management">Weight Management</button>
+    </div>
+  </div>
+
+  <div class="pref-section glass-card">
+    <h2 class="pref-heading">Allergens & intolerances</h2>
+    <p class="pref-subtext">We'll flag these when they show up in a product's ingredients.</p>
+    <div class="pref-pill-group" id="allergen-group">
+      <button class="pref-pill" data-allergen="milk">Milk / Dairy</button>
+      <button class="pref-pill" data-allergen="nuts">Tree Nuts</button>
+      <button class="pref-pill" data-allergen="peanuts">Peanuts</button>
+      <button class="pref-pill" data-allergen="gluten">Gluten</button>
+      <button class="pref-pill" data-allergen="soy">Soy</button>
+      <button class="pref-pill" data-allergen="eggs">Eggs</button>
+      <button class="pref-pill" data-allergen="shellfish">Shellfish</button>
+    </div>
+  </div>
+
+  <div class="pref-section glass-card">
+    <button id="save-prefs-btn" class="pref-save-btn">Save Preferences</button>
+    <p id="save-confirm" class="pref-save-confirm hidden">✓ Saved — this now applies on your next scan</p>
+  </div>
+
   <footer class="bottom-nav">
     <a href="home.html" class="nav-item">
       <svg viewBox="0 0 24 24" class="nav-icon"><path d="M12 3l9 8h-3v9h-5v-6H11v6H6v-9H3z"/></svg>
@@ -21,5 +58,70 @@
       <span>Profile</span>
     </a>
   </footer>
+
+  <script>
+    const STORAGE_KEY = 'ceres_preferences';
+
+    const goalButtons = document.querySelectorAll('#goal-group .pref-pill');
+    const allergenButtons = document.querySelectorAll('#allergen-group .pref-pill');
+    const saveBtn = document.getElementById('save-prefs-btn');
+    const saveConfirm = document.getElementById('save-confirm');
+
+    let selectedGoal = 'balanced';
+    let selectedAllergens = new Set();
+
+    function loadPreferences() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const prefs = JSON.parse(raw);
+        selectedGoal = prefs.goal || 'balanced';
+        selectedAllergens = new Set(prefs.allergens || []);
+      } catch (err) {
+        console.error('Failed to load preferences:', err);
+      }
+    }
+
+    function renderSelections() {
+      goalButtons.forEach(btn => {
+        btn.classList.toggle('pref-pill-active', btn.dataset.goal === selectedGoal);
+      });
+      allergenButtons.forEach(btn => {
+        btn.classList.toggle('pref-pill-active', selectedAllergens.has(btn.dataset.allergen));
+      });
+    }
+
+    goalButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectedGoal = btn.dataset.goal;
+        renderSelections();
+      });
+    });
+
+    allergenButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const allergen = btn.dataset.allergen;
+        if (selectedAllergens.has(allergen)) {
+          selectedAllergens.delete(allergen);
+        } else {
+          selectedAllergens.add(allergen);
+        }
+        renderSelections();
+      });
+    });
+
+    saveBtn.addEventListener('click', () => {
+      const prefs = {
+        goal: selectedGoal,
+        allergens: Array.from(selectedAllergens)
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+      saveConfirm.classList.remove('hidden');
+      setTimeout(() => saveConfirm.classList.add('hidden'), 2500);
+    });
+
+    loadPreferences();
+    renderSelections();
+  </script>
 </body>
 </html>
