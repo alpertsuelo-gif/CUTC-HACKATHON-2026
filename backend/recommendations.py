@@ -1,222 +1,321 @@
-# recommendations.py
+# recommendation.py
 #
 # Cart recommendation layer.
 #
-# This module analyzes the current cart through cart.py and
-# generates three types of feedback:
-#
-#   1. Warnings
-#      Problems detected in the cart, such as low-rated products
-#      or products with limited grading confidence.
-#
-#   2. Suggestions
-#      Practical improvements based on the cart's food groups.
-#
-#   3. Positive feedback
-#      Recognition of higher-rated choices already present.
-#
-# Recommendation flow:
-#
-#   cart.py
-#       ↓
-#   analyze_cart()
-#       ↓
-#   recommendations.py
-#       ↓
-#   warnings / suggestions / positive feedback
+# Structure:
+#   1. Analyze the current cart.
+#   2. Identify products that need better alternatives.
+#   3. Search Open Food Facts for candidate products.
+#   4. Grade the candidates.
+#   5. Return products in the structure expected by the frontend.
 #
 # IMPORTANT:
-# recommend() takes no arguments because it retrieves and
-# analyzes the current cart through analyze_cart().
-#
+# This module returns recommendation PRODUCT objects.
+# main.py simply exposes them through /recommendations.
 
-from cart import analyze_cart
+
+from cart import get_cart, analyze_cart
+from grading import grade_product
+from models import Product
+from products import search_products
 
 
 # ============================================================
-# MAIN RECOMMENDATION
-#
-# Coordinates the recommendation system.
-#
-# The cart is analyzed once, then the resulting analysis is
-# passed to each recommendation category.
+# CONFIGURATION
+# ============================================================
+
+MAX_RECOMMENDATIONS = 3
+
+
+# ============================================================
+# HELPERS
+# ============================================================
+
+def _dict_to_product(data):
+    """
+    Convert a product dictionary into a Product object.
+    """
+
+    return Product(
+        barcode=str(
+            data.get(
+                "barcode",
+                ""
+            )
+        ),
+
+        name=data.get("name"),
+        brand=data.get("brand"),
+        nutriscore=data.get("nutriscore"),
+        energy_kj=data.get("energy_kj"),
+        fat=data.get("fat"),
+        saturated_fat=data.get("saturated_fat"),
+        carbohydrates=data.get("carbohydrates"),
+        sugars=data.get("sugars"),
+        fiber=data.get("fiber"),
+        protein=data.get("protein"),
+        salt=data.get("salt"),
+        sodium=data.get("sodium"),
+        ingredients=data.get("ingredients"),
+        categories=data.get("categories"),
+        countries=data.get("countries")
+    )
+
+
+def _get_cart_barcodes():
+    """
+    Get barcodes already present in the cart.
+    """
+
+    return {
+        str(
+            item["product"].barcode
+        )
+        for item in get_cart()
+    }
+
+
+def _get_categories():
+    """
+    Extract useful categories from products currently
+    in the cart.
+    """
+
+    categories = []
+
+    for item in get_cart():
+
+        product = item.get(
+            "product"
+        )
+
+        if not product:
+            continue
+
+        raw_categories = getattr(
+            product,
+            "categories",
+            None
+        )
+
+        if not raw_categories:
+            continue
+
+        # Open Food Facts categories can be comma-separated.
+        for category in str(
+            raw_categories
+        ).split(","):
+
+            category = category.strip()
+
+            if category:
+                categories.append(
+                    category
+                )
+
+    return categories
+
+
+def _candidate_score(grading):
+    """
+    Convert a product grade into a numerical score.
+
+    Higher score = better recommendation.
+    """
+
+    grade = str(
+        grading.get(
+            "grade",
+            ""
+        )
+    ).upper()
+
+    scores = {
+        "A": 5,
+        "B": 4,
+        "C": 3,
+        "D": 2,
+        "E": 1
+    }
+
+    return scores.get(
+        grade,
+        0
+    )
+
+
+# ============================================================
+# RECOMMENDATION GENERATION
 # ============================================================
 
 def recommend():
     """
-    Analyze the current cart and generate recommendations.
+    Generate product recommendations based on the current cart.
+
+    Returns:
+
+        [
+            {
+                "product": {...},
+                "reason": "..."
+            }
+        ]
     """
 
     analysis = analyze_cart()
 
-    # Handle an empty cart before generating recommendations.
+    # --------------------------------------------------------
+    # Empty cart
+    # --------------------------------------------------------
 
     if analysis["total_items"] == 0:
-        return {
-            "warnings": [],
-            "suggestions": [
-                "Add products to your cart first."
-            ],
-            "positive_feedback": []
-        }
-
-    warnings = []
-    suggestions = []
-    positive_feedback = []
-
-    warnings.extend(
-        _grade_recommendations(analysis)
-    )
-
-    warnings.extend(
-        _confidence_recommendations(analysis)
-    )
-
-    suggestions.extend(
-        _food_group_recommendations(analysis)
-    )
-
-    positive_feedback.extend(
-        _positive_feedback(analysis)
-    )
-
-    return {
-        "warnings": warnings,
-        "suggestions": suggestions,
-        "positive_feedback": positive_feedback
-    }
-
-
-# ============================================================
-# GRADE RECOMMENDATIONS
-#
-# Checks the grades produced by cart.py.
-#
-# Products graded D or E are treated as lower-rated choices.
-# ============================================================
-
-def _grade_recommendations(analysis):
-    """
-    Generate warnings based on the cart's grades.
-    """
-
-    grades = analysis["grades"]
-
-    low_rated = (
-        grades["D"] +
-        grades["E"]
-    )
-
-    if low_rated >= 2:
-        return [
-            "Your cart contains several lower-rated products. "
-            "Consider choosing higher-rated alternatives."
-        ]
-
-    if low_rated == 1:
-        return [
-            "Your cart contains a lower-rated product. "
-            "Consider a higher-rated alternative."
-        ]
-
-    return []
-
-
-# ============================================================
-# CONFIDENCE RECOMMENDATIONS
-#
-# Warns the user when one or more products have insufficient
-# data for a highly reliable grade.
-# ============================================================
-
-def _confidence_recommendations(analysis):
-    """
-    Warn when some product grades have low confidence.
-    """
-
-    count = len(
-        analysis["low_confidence_items"]
-    )
-
-    if count == 0:
         return []
 
-    return [
-        f"{count} product(s) have limited data, "
-        "so their grades may be less reliable."
-    ]
+    cart_barcodes = _get_cart_barcodes()
 
+    candidates = []
 
-# ============================================================
-# FOOD GROUP RECOMMENDATIONS
-#
-# Checks whether the cart contains fruit or vegetables.
-#
-# Balance recommendations are intentionally disabled for carts
-# containing fewer than three products to avoid making overly
-# aggressive suggestions from very little information.
-# ============================================================
+    # --------------------------------------------------------
+    # Search using cart categories
+    # --------------------------------------------------------
 
-def _food_group_recommendations(analysis):
-    """
-    Suggest food groups when the cart appears unbalanced.
-    """
+    categories = _get_categories()
 
-    food_groups = analysis["food_groups"]
+    for category in categories:
 
-    # Don't make balance recommendations for tiny carts.
-
-    if analysis["total_items"] < 3:
-        return []
-
-    suggestions = []
-
-    has_fruit = (
-        food_groups.get("fruit", 0) > 0
-    )
-
-    has_vegetable = (
-        food_groups.get("vegetable", 0) > 0
-    )
-
-    if not has_fruit and not has_vegetable:
-        suggestions.append(
-            "Consider adding fruit or vegetables "
-            "to your cart."
+        results = search_products(
+            category=category,
+            page_size=10
         )
 
-    return suggestions
+        candidates.extend(
+            results
+        )
 
+        if len(candidates) >= 30:
+            break
 
-# ============================================================
-# POSITIVE FEEDBACK
-#
-# Recognizes products with higher grades.
-#
-# A and B are considered higher-rated choices.
-# ============================================================
+    # --------------------------------------------------------
+    # Fallback search
+    # --------------------------------------------------------
 
-def _positive_feedback(analysis):
-    """
-    Provide positive feedback for higher-rated choices.
-    """
+    if not candidates:
 
-    grades = analysis["grades"]
+        candidates = search_products(
+            page_size=20
+        )
 
-    good_choices = (
-        grades["A"] +
-        grades["B"]
+    # --------------------------------------------------------
+    # Remove products already in cart
+    # --------------------------------------------------------
+
+    filtered = []
+
+    seen = set()
+
+    for candidate in candidates:
+
+        barcode = str(
+            candidate.get(
+                "barcode",
+                ""
+            )
+        )
+
+        if not barcode:
+            continue
+
+        if barcode in cart_barcodes:
+            continue
+
+        if barcode in seen:
+            continue
+
+        seen.add(
+            barcode
+        )
+
+        filtered.append(
+            candidate
+        )
+
+    # --------------------------------------------------------
+    # Grade candidates
+    # --------------------------------------------------------
+
+    scored_candidates = []
+
+    for candidate in filtered:
+
+        try:
+
+            product = _dict_to_product(
+                candidate
+            )
+
+            grading = grade_product(
+                product
+            )
+
+            score = _candidate_score(
+                grading
+            )
+
+            if score <= 0:
+                continue
+
+            scored_candidates.append(
+                (
+                    score,
+                    product,
+                    grading
+                )
+            )
+
+        except Exception:
+            continue
+
+    # --------------------------------------------------------
+    # Best products first
+    # --------------------------------------------------------
+
+    scored_candidates.sort(
+        key=lambda item: item[0],
+        reverse=True
     )
 
-    if good_choices == 0:
-        return []
+    # --------------------------------------------------------
+    # Build frontend response
+    # --------------------------------------------------------
 
-    if good_choices == 1:
-        return [
-            "Your cart contains a higher-rated choice."
-        ]
+    recommendations = []
 
-    return [
-        f"Your cart contains "
-        f"{good_choices} higher-rated choices."
-    ]
+    for (
+        score,
+        product,
+        grading
+    ) in scored_candidates[
+        :MAX_RECOMMENDATIONS
+    ]:
+
+        grade = grading.get(
+            "grade",
+            "?"
+        )
+
+        recommendations.append(
+            {
+                "product": {
+                    "barcode": product.barcode,
+                    "name": product.name,
+                    "brand": product.brand,
+                    "nutriscore": product.nutriscore,
+                },
+
+                "reason":
+                    f"Recommended as a higher-rated choice "
+                    f"(Grade {grade})."
+            }
+        )
+
+    return recommendations
