@@ -33,22 +33,42 @@
 
   <div id="product-info" class="product-info hidden">
     <h2 id="product-name">Product Name</h2>
-    <p><strong>Brand:</strong> <span id="product-brand">--</span></p>
-    <p><strong>Barcode:</strong> <span id="product-barcode">--</span></p>
-    <p><strong>Nutriscore:</strong> <span id="product-nutriscore">--</span></p>
-    
-    <div class="product-grade">
-      <p><strong>Grade:</strong> <span id="product-grade">--</span></p>
+    <p id="product-brand" class="product-header-brand">--</p>
+    <p id="product-barcode" class="product-header-barcode">--</p>
+
+    <div id="allergen-alert" class="allergen-alert hidden"></div>
+    <div id="goal-note" class="goal-note hidden"></div>
+
+    <div class="grade-gauge">
+      <div class="gauge-ring">
+        <div class="gauge-inner">
+          <span id="gauge-grade-letter" class="gauge-grade-letter">--</span>
+          <span id="gauge-score" class="gauge-score">score --</span>
+        </div>
+      </div>
+      <div id="gauge-pointer" class="gauge-pointer"></div>
+    </div>
+    <div class="gauge-labels"><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span></div>
+
+    <div class="product-meta-row">
+      <span id="product-food-group" class="meta-pill">--</span>
+      <span id="product-confidence" class="meta-pill">--</span>
     </div>
 
-    <div class="nutrition-info" id="nutrition-info" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.2);">
-      <h3>Nutrition Info</h3>
+    <div class="nutrition-info" id="nutrition-info" style="display: none;">
+      <h3>Nutrition Info <span style="opacity:0.6; font-weight:400; font-size:0.75rem;">(per 100g)</span></h3>
+      <p><strong>Nutriscore ref:</strong> <span id="product-nutriscore">--</span></p>
       <p><strong>Energy:</strong> <span id="product-energy">--</span> kJ</p>
       <p><strong>Protein:</strong> <span id="product-protein">--</span> g</p>
       <p><strong>Fat:</strong> <span id="product-fat">--</span> g</p>
       <p><strong>Carbs:</strong> <span id="product-carbs">--</span> g</p>
       <p><strong>Sugars:</strong> <span id="product-sugars">--</span> g</p>
       <p><strong>Salt:</strong> <span id="product-salt">--</span> g</p>
+    </div>
+
+    <div class="breakdown-section" id="breakdown-section" style="display: none;">
+      <h3>Why this grade</h3>
+      <div id="breakdown-list"></div>
     </div>
 
     <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: center;">
@@ -119,20 +139,197 @@
       loadingDiv.classList.add('hidden');
     }
 
+    const GRADE_ORDER = ["A", "B", "C", "D", "E"];
+
+    const FACTOR_LABELS = {
+      energy: "Energy",
+      sugars: "Sugars",
+      saturated_fat: "Sat. fat",
+      salt: "Salt",
+      fiber: "Fiber",
+      protein: "Protein",
+      food_group: "Food group",
+      food_category: "Category"
+    };
+
+    const ALLERGEN_KEYWORDS = {
+      milk: ["milk", "dairy", "lactose", "whey", "casein", "butter", "cream", "cheese", "ghee"],
+      nuts: ["almond", "cashew", "walnut", "pistachio", "hazelnut", "pecan", "tree nut"],
+      peanuts: ["peanut", "groundnut"],
+      gluten: ["wheat", "barley", "rye", "gluten", "malt"],
+      soy: ["soy", "soya", "soja"],
+      eggs: ["egg"],
+      shellfish: ["shrimp", "crab", "lobster", "shellfish", "prawn"]
+    };
+
+    const ALLERGEN_LABELS = {
+      milk: "Milk/Dairy", nuts: "Tree Nuts", peanuts: "Peanuts",
+      gluten: "Gluten", soy: "Soy", eggs: "Eggs", shellfish: "Shellfish"
+    };
+
+    const GOAL_LABELS = {
+      balanced: "Balanced", low_sugar: "Low Sugar", low_sodium: "Low Sodium",
+      high_protein: "High Protein", weight_management: "Weight Management"
+    };
+
+    function getPreferences() {
+      try {
+        const raw = localStorage.getItem('ceres_preferences');
+        if (!raw) return { goal: 'balanced', allergens: [] };
+        return JSON.parse(raw);
+      } catch (err) {
+        return { goal: 'balanced', allergens: [] };
+      }
+    }
+
+    function checkAllergens(product, allergens) {
+      const ingredientsText = (product.ingredients || '').toLowerCase();
+      const categoriesText = (product.categories || '').toLowerCase();
+      const haystack = `${ingredientsText} ${categoriesText}`;
+
+      if (!ingredientsText) return { checked: false, hits: [] };
+
+      const hits = allergens.filter(allergen => {
+        const keywords = ALLERGEN_KEYWORDS[allergen] || [];
+        return keywords.some(kw => haystack.includes(kw));
+      });
+
+      return { checked: true, hits };
+    }
+
+    function renderAllergenAlert(product, allergens) {
+      const alertEl = document.getElementById('allergen-alert');
+
+      if (!allergens || allergens.length === 0) {
+        alertEl.classList.add('hidden');
+        return;
+      }
+
+      const result = checkAllergens(product, allergens);
+
+      if (!result.checked) {
+        alertEl.innerHTML = `⚠ No ingredients data available — can't check your allergens for this product.`;
+        alertEl.classList.remove('hidden');
+        return;
+      }
+
+      if (result.hits.length === 0) {
+        alertEl.classList.add('hidden');
+        return;
+      }
+
+      const names = result.hits.map(a => ALLERGEN_LABELS[a] || a).join(', ');
+      alertEl.innerHTML = `⚠ May contain: <strong>${names}</strong> — check the label.`;
+      alertEl.classList.remove('hidden');
+    }
+
+    function renderGoalNote(product, goal) {
+      const noteEl = document.getElementById('goal-note');
+      noteEl.className = 'goal-note hidden';
+
+      if (!goal || goal === 'balanced') return;
+
+      let message = null;
+      let tone = 'warning';
+
+      if (goal === 'low_sugar' && product.sugars > 10) {
+        message = `High in sugar (${product.sugars}g/100g) for your Low Sugar goal.`;
+      } else if (goal === 'low_sodium' && product.salt > 1.2) {
+        message = `High in salt (${product.salt}g/100g) for your Low Sodium goal.`;
+      } else if (goal === 'high_protein' && product.protein > 10) {
+        message = `Good protein source (${product.protein}g/100g) for your goal.`;
+        tone = 'positive';
+      } else if (goal === 'weight_management' && product.energy_kj > 1700) {
+        message = `Energy-dense (${product.energy_kj}kJ/100g) — worth checking your portion.`;
+      }
+
+      if (message) {
+        noteEl.textContent = `🎯 ${message}`;
+        noteEl.className = `goal-note ${tone}`;
+      }
+    }
+
+    function setGauge(grade) {
+      const letterEl = document.getElementById('gauge-grade-letter');
+      const pointerEl = document.getElementById('gauge-pointer');
+      letterEl.textContent = grade || '?';
+      letterEl.style.color = gradeColors[grade] || '#999';
+
+      const index = GRADE_ORDER.indexOf(grade);
+      const safeIndex = index === -1 ? 2 : index; // default to middle if unknown
+      // Each segment is 72deg, pointer sits at the segment's center.
+      const angle = safeIndex * 72 + 36;
+      pointerEl.style.transform = `rotate(${angle}deg)`;
+    }
+
+    function setMeta(grading) {
+      const foodGroupEl = document.getElementById('product-food-group');
+      const confidenceEl = document.getElementById('product-confidence');
+
+      const foodGroup = (grading.food_group || 'unknown').replace(/_/g, ' ');
+      foodGroupEl.textContent = foodGroup;
+
+      const confidence = grading.confidence || 'unknown';
+      confidenceEl.textContent = `${confidence} confidence`;
+      confidenceEl.className = 'meta-pill';
+      if (confidence === 'high') confidenceEl.classList.add('confidence-high');
+      else if (confidence === 'medium') confidenceEl.classList.add('confidence-medium');
+      else if (confidence === 'low') confidenceEl.classList.add('confidence-low');
+    }
+
+    function renderBreakdown(breakdown) {
+      const section = document.getElementById('breakdown-section');
+      const list = document.getElementById('breakdown-list');
+      list.innerHTML = '';
+
+      const entries = Object.entries(breakdown || {}).filter(([, points]) => points !== 0);
+
+      if (entries.length === 0) {
+        section.style.display = 'none';
+        return;
+      }
+
+      section.style.display = 'block';
+
+      // Largest-impact factors first.
+      entries.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+
+      const maxAbs = Math.max(...entries.map(([, points]) => Math.abs(points)), 1);
+
+      entries.forEach(([factor, points]) => {
+        const isPositive = points > 0;
+        const widthPct = Math.min((Math.abs(points) / maxAbs) * 50, 50);
+
+        const row = document.createElement('div');
+        row.className = 'breakdown-row';
+        row.innerHTML = `
+          <span class="breakdown-label">${FACTOR_LABELS[factor] || factor}</span>
+          <span class="breakdown-track">
+            <span class="breakdown-bar ${isPositive ? 'positive' : 'negative'}" style="width:${widthPct}%"></span>
+          </span>
+          <span class="breakdown-value ${isPositive ? 'positive' : 'negative'}">${isPositive ? '+' : ''}${points}</span>
+        `;
+        list.appendChild(row);
+      });
+    }
+
     function displayProduct(product, grading) {
       currentProduct = product;
       currentGrading = grading;
 
-      document.getElementById('product-name').textContent = product.name || 'Unknown';
-      document.getElementById('product-brand').textContent = product.brand || '--';
-      document.getElementById('product-barcode').textContent = product.barcode || '--';
-      document.getElementById('product-nutriscore').textContent = product.nutriscore || '--';
-      
-      const gradeSpan = document.getElementById('product-grade');
-      gradeSpan.textContent = grading.grade || '?';
-      gradeSpan.style.color = gradeColors[grading.grade] || '#999';
-      gradeSpan.style.fontWeight = 'bold';
-      gradeSpan.style.fontSize = '1.2rem';
+      document.getElementById('product-name').textContent = product.name || 'Unknown product';
+      document.getElementById('product-brand').textContent = product.brand || 'Unknown brand';
+      document.getElementById('product-barcode').textContent = `Barcode: ${product.barcode || '--'}`;
+      document.getElementById('product-nutriscore').textContent = product.nutriscore ? product.nutriscore.toUpperCase() : '--';
+
+      setGauge(grading.grade);
+      document.getElementById('gauge-score').textContent = `score ${grading.score ?? '--'}`;
+      setMeta(grading);
+      renderBreakdown(grading.breakdown);
+
+      const prefs = getPreferences();
+      renderAllergenAlert(product, prefs.allergens || []);
+      renderGoalNote(product, prefs.goal || 'balanced');
 
       if (product.energy_kj) {
         document.getElementById('product-energy').textContent = product.energy_kj;
