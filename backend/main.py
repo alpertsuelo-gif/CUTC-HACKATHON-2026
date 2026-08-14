@@ -9,12 +9,12 @@
 #   4. grading.py
 #   5. cart.py
 #   6. recommendations.py
-#   7. recommendations_ai.py
 #
-# The frontend communicates with CERES through the API endpoints
-# defined in this file.
+# The frontend communicates with CERES through the API
+# endpoints defined in this file.
 #
 # Main flow:
+#
 #   Frontend
 #       ↓
 #   main.py
@@ -22,9 +22,9 @@
 #   scanner / products / grading / cart / recommendations
 #
 # IMPORTANT:
-# main.py is responsible for connecting the modules together.
-# Individual modules should handle their own specific logic
-# rather than duplicating that logic inside this file.
+# main.py connects the backend modules together.
+# Individual modules are responsible for their own logic.
+#
 
 
 from dataclasses import asdict
@@ -32,7 +32,13 @@ from pathlib import Path
 import tempfile
 import threading
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import (
+    FastAPI,
+    UploadFile,
+    File,
+    HTTPException,
+)
+
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -49,7 +55,6 @@ from cart import (
     cart,
 )
 
-from recommendations_ai import recommend_for_cart
 from recommendations import recommend
 
 
@@ -58,8 +63,7 @@ from recommendations import recommend
 #
 # Configuration values used throughout the API.
 #
-# MAX_UPLOAD_SIZE_BYTES prevents excessively large image
-# uploads from being processed.
+# MAX_UPLOAD_SIZE_BYTES limits the size of uploaded images.
 #
 # ALLOWED_EXTENSIONS limits barcode scanning to supported
 # image file types.
@@ -78,10 +82,6 @@ ALLOWED_EXTENSIONS = {
 
 
 # Lock used to protect shared cart operations.
-#
-# The lock is only held while reading or modifying the cart.
-# Slow operations such as AI recommendations happen after
-# the lock has been released.
 
 _cart_lock = threading.Lock()
 
@@ -93,9 +93,6 @@ _cart_lock = threading.Lock()
 #
 # The frontend communicates with this application through the
 # HTTP endpoints defined below.
-#
-# CORS is enabled so the frontend can communicate with the
-# backend even when they are running on different origins.
 # ============================================================
 
 app = FastAPI(
@@ -119,18 +116,19 @@ app.add_middleware(
 #
 # Provides a consistent response for unexpected backend errors.
 #
-# Expected errors should still use HTTPException inside their
+# Expected errors are handled using HTTPException inside their
 # respective endpoints.
 #
-# Unexpected errors are caught here and returned as a generic
-# 500 response instead of exposing internal implementation
-# details to the frontend.
+# Unexpected errors are converted into a generic 500 response
+# so internal implementation details are not exposed.
 # ============================================================
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
+
     print(
-        f"[ERROR] {request.method} {request.url}: {exc}"
+        f"[ERROR] {request.method} "
+        f"{request.url}: {exc}"
     )
 
     return JSONResponse(
@@ -148,12 +146,11 @@ async def global_exception_handler(request, exc):
 #
 # Utility functions used by multiple API endpoints.
 #
-# These functions handle conversion between the dictionaries
-# used by products.py and the Product objects used by the rest
-# of the CERES backend.
+# products.py returns dictionaries.
+# models.py provides the Product class.
 #
-# They also convert Product objects back into dictionaries so
-# FastAPI can safely return them as JSON.
+# These helpers convert between those representations and
+# prepare objects for JSON responses.
 # ============================================================
 
 def dict_to_product(data: dict) -> Product:
@@ -162,10 +159,14 @@ def dict_to_product(data: dict) -> Product:
     """
 
     if "error" in data:
-        raise ValueError(data["error"])
+        raise ValueError(
+            data["error"]
+        )
 
     return Product(
-        barcode=str(data.get("barcode", "")),
+        barcode=str(
+            data.get("barcode", "")
+        ),
         name=data.get("name"),
         brand=data.get("brand"),
         nutriscore=data.get("nutriscore"),
@@ -186,10 +187,11 @@ def dict_to_product(data: dict) -> Product:
 
 def product_response(
     product: Product,
-    grading: dict
+    grading: dict,
 ) -> dict:
     """
-    Convert Product and grading information into JSON-safe data.
+    Convert Product and grading information into
+    JSON-safe data.
     """
 
     return {
@@ -205,7 +207,9 @@ def cart_response() -> list:
 
     return [
         {
-            "product": asdict(item["product"]),
+            "product": asdict(
+                item["product"]
+            ),
             "grading": item["grading"],
         }
         for item in get_cart()
@@ -214,7 +218,7 @@ def cart_response() -> list:
 
 def _validate_upload(
     file: UploadFile,
-    contents: bytes
+    contents: bytes,
 ) -> str:
     """
     Validate an uploaded image.
@@ -245,19 +249,21 @@ def _validate_upload(
         raise HTTPException(
             status_code=413,
             detail=(
-                f"File too large. Maximum size is "
+                "File too large. Maximum size is "
                 f"{MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)} MB"
             ),
         )
 
-    suffix = Path(file.filename).suffix.lower()
+    suffix = Path(
+        file.filename
+    ).suffix.lower()
 
     if suffix not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
             detail=(
                 f"Unsupported file type '{suffix}'. "
-                f"Allowed: "
+                "Allowed: "
                 f"{', '.join(sorted(ALLOWED_EXTENSIONS))}"
             ),
         )
@@ -273,12 +279,12 @@ def _validate_upload(
 #
 # "/" provides basic API information.
 #
-# "/health" provides a simple health check that can be used
-# by the frontend or deployment environment.
+# "/health" provides a simple health check.
 # ============================================================
 
 @app.get("/")
 def root():
+
     return {
         "name": "CERES API",
         "status": "running",
@@ -287,6 +293,7 @@ def root():
 
 @app.get("/health")
 def health():
+
     return {
         "status": "ok",
     }
@@ -299,6 +306,7 @@ def health():
 # the barcode scanning pipeline.
 #
 # Pipeline:
+#
 #   Image
 #       ↓
 #   scanner.py
@@ -316,19 +324,12 @@ def health():
 #   grading.py
 #       ↓
 #   Product + grade
-#
-# The uploaded image is temporarily stored on the server
-# because scanner.py expects an image file path.
-#
-# The temporary file is deleted after processing.
 # ============================================================
 
 @app.post("/scan")
-async def scan(file: UploadFile = File(...)):
-    """
-    Receive an image, scan its barcode,
-    find the product, and grade it.
-    """
+async def scan(
+    file: UploadFile = File(...)
+):
 
     contents = await file.read()
 
@@ -347,31 +348,41 @@ async def scan(file: UploadFile = File(...)):
         ) as temp_file:
 
             temp_file.write(contents)
+
             temp_path = temp_file.name
 
-        # Scan the barcode from the uploaded image.
+        # Scan barcode.
 
-        scanned = scan_product(temp_path)
+        scanned = scan_product(
+            temp_path
+        )
 
         if "error" in scanned:
+
             raise HTTPException(
                 status_code=404,
                 detail=scanned["error"],
             )
 
-        barcode = scanned.get("barcode")
+        barcode = scanned.get(
+            "barcode"
+        )
 
         if not barcode:
+
             raise HTTPException(
                 status_code=404,
                 detail="Could not identify barcode",
             )
 
-        # Retrieve product information using the barcode.
+        # Retrieve product.
 
-        product_data = get_product(barcode)
+        product_data = get_product(
+            barcode
+        )
 
         if "error" in product_data:
+
             raise HTTPException(
                 status_code=404,
                 detail=product_data.get(
@@ -380,13 +391,13 @@ async def scan(file: UploadFile = File(...)):
                 ),
             )
 
-        # Convert dictionary into Product object.
+        # Convert dictionary to Product.
 
         product = dict_to_product(
             product_data
         )
 
-        # Grade the product.
+        # Grade product.
 
         grading = grade_product(
             product
@@ -401,6 +412,7 @@ async def scan(file: UploadFile = File(...)):
         raise
 
     except ValueError as error:
+
         raise HTTPException(
             status_code=422,
             detail=str(error),
@@ -423,7 +435,10 @@ async def scan(file: UploadFile = File(...)):
     finally:
 
         if temp_path:
-            Path(temp_path).unlink(
+
+            Path(
+                temp_path
+            ).unlink(
                 missing_ok=True
             )
 
@@ -432,9 +447,10 @@ async def scan(file: UploadFile = File(...)):
 # PRODUCT LOOKUP
 #
 # Allows the frontend to request a product directly using
-# its barcode without uploading an image.
+# its barcode.
 #
 # Pipeline:
+#
 #   Barcode
 #       ↓
 #   products.py
@@ -451,12 +467,12 @@ async def scan(file: UploadFile = File(...)):
 # ============================================================
 
 @app.get("/product/{barcode}")
-def product(barcode: str):
-    """
-    Look up a product directly using its barcode.
-    """
+def product(
+    barcode: str
+):
 
     if not barcode.isdigit():
+
         raise HTTPException(
             status_code=400,
             detail="Invalid barcode format",
@@ -467,6 +483,7 @@ def product(barcode: str):
     )
 
     if "error" in data:
+
         raise HTTPException(
             status_code=404,
             detail=data.get(
@@ -492,39 +509,25 @@ def product(barcode: str):
 # ============================================================
 # CART
 #
-# Provides endpoints for managing the user's current grocery
-# cart.
+# Provides endpoints for managing the current grocery cart.
 #
-# cart.py owns the actual cart logic.
-# main.py only connects that logic to the frontend.
+# cart.py owns the cart logic.
+# main.py exposes that logic to the frontend.
 #
 # Supported operations:
 #   1. View cart
 #   2. Add product
 #   3. Remove product
 #   4. Clear cart
-#
-# Product flow when adding:
-#   Barcode
-#       ↓
-#   products.py
-#       ↓
-#   Product
-#       ↓
-#   grading.py
-#       ↓
-#   cart.py
 # ============================================================
 
 @app.get("/cart")
 def cart_endpoint():
-    """
-    Return all products currently in the cart.
-    """
 
     with _cart_lock:
 
         items = cart_response()
+
         total = len(cart)
 
     return {
@@ -534,13 +537,12 @@ def cart_endpoint():
 
 
 @app.post("/cart/add/{barcode}")
-def add_to_cart(barcode: str):
-    """
-    Find, convert, grade, and add a product
-    to the cart.
-    """
+def add_to_cart(
+    barcode: str
+):
 
     if not barcode.isdigit():
+
         raise HTTPException(
             status_code=400,
             detail="Invalid barcode format",
@@ -551,6 +553,7 @@ def add_to_cart(barcode: str):
     )
 
     if "error" in data:
+
         raise HTTPException(
             status_code=404,
             detail=data.get(
@@ -588,10 +591,9 @@ def add_to_cart(barcode: str):
 
 
 @app.delete("/cart/{barcode}")
-def remove_from_cart(barcode: str):
-    """
-    Remove a product from the cart.
-    """
+def remove_from_cart(
+    barcode: str
+):
 
     with _cart_lock:
 
@@ -600,6 +602,7 @@ def remove_from_cart(barcode: str):
         )
 
         if not removed:
+
             raise HTTPException(
                 status_code=404,
                 detail="Product not found in cart",
@@ -616,11 +619,9 @@ def remove_from_cart(barcode: str):
 
 @app.delete("/cart")
 def clear_cart():
-    """
-    Clear the entire cart.
-    """
 
     with _cart_lock:
+
         cart.clear()
 
     return {
@@ -633,23 +634,15 @@ def clear_cart():
 # ============================================================
 # CART ANALYSIS
 #
-# Uses the analysis logic from cart.py to evaluate the current
-# contents of the cart.
+# Uses analyze_cart() from cart.py.
 #
 # cart.py performs the analysis.
-# main.py converts the resulting Product objects into
-# JSON-safe dictionaries for the frontend.
-#
-# This endpoint is separate from recommendations because
-# analysis describes the current cart, while recommendations
-# suggest possible improvements.
+# main.py converts Product objects into JSON-safe dictionaries
+# before returning the result to the frontend.
 # ============================================================
 
 @app.get("/cart/analysis")
 def cart_analysis():
-    """
-    Analyze the current cart.
-    """
 
     with _cart_lock:
 
@@ -657,14 +650,14 @@ def cart_analysis():
 
     analysis["low_rated_items"] = [
         asdict(product)
-        for product in analysis["low_rated_items"]
+        for product
+        in analysis["low_rated_items"]
     ]
 
     analysis["low_confidence_items"] = [
         asdict(product)
-        for product in analysis[
-            "low_confidence_items"
-        ]
+        for product
+        in analysis["low_confidence_items"]
     ]
 
     return analysis
@@ -673,122 +666,36 @@ def cart_analysis():
 # ============================================================
 # RECOMMENDATIONS
 #
-# Provides healthier product recommendations based on the
+# Uses recommendations.py to generate feedback based on the
 # current cart.
 #
-# Recommendation order:
-#   1. recommendation_ai.py
-#   2. recommendations.py as fallback
+# recommendations.py internally calls analyze_cart(), so
+# main.py does not pass the cart as an argument.
 #
-# Primary AI pipeline:
-#   cart.py
-#       ↓
-#   Product objects
-#       ↓
-#   recommendation_ai.py
-#       ↓
-#   Healthier alternatives
+# Recommendation flow:
 #
-# If the AI recommendation system fails, the existing
-# recommendations.py system is used instead.
-#
-# IMPORTANT:
-# The cart lock is released before recommendation processing.
-# AI/API calls can be slow and should not block other cart
-# operations.
+#   Frontend
+#       ↓
+#   GET /recommendations
+#       ↓
+#   recommendations.py
+#       ↓
+#   analyze_cart()
+#       ↓
+#   warnings
+#   suggestions
+#   positive_feedback
+#       ↓
+#   Frontend
 # ============================================================
 
 @app.get("/recommendations")
 def recommendations():
     """
-    Generate healthier product recommendations.
-
-    Primary:
-        recommendations_ai.py
-
-    Fallback:
-        recommendations.py
+    Generate recommendations based on the current cart.
     """
 
-    # Copy the current cart contents while protected
-    # by the lock.
-
-    with _cart_lock:
-
-        products = [
-            item["product"]
-            for item in get_cart()
-        ]
-
-    # The lock is released here.
-    #
-    # Recommendation processing can now happen without
-    # blocking other cart operations.
-
-    try:
-
-        # ----------------------------------------------------
-        # PRIMARY RECOMMENDATION SYSTEM
-        # ----------------------------------------------------
-
-        ai_result = recommend_for_cart(
-            products
-        )
-
-        # Convert the target Product object
-        # into a JSON-safe dictionary.
-
-        if ai_result.get("target") is not None:
-
-            ai_result["target"] = asdict(
-                ai_result["target"]
-            )
-
-        # Convert alternative Product objects
-        # into JSON-safe dictionaries.
-
-        ai_result["alternatives"] = [
-
-            {
-                **recommendation,
-                "product": asdict(
-                    recommendation["product"]
-                ),
-            }
-
-            for recommendation
-            in ai_result.get(
-                "alternatives",
-                [],
-            )
-        ]
-
-        return {
-            "source": "ai",
-            "recommendations": ai_result,
-        }
-
-    except Exception as error:
-
-        # ----------------------------------------------------
-        # FALLBACK RECOMMENDATION SYSTEM
-        # ----------------------------------------------------
-
-        print(
-            f"[RECOMMENDATION AI] Failed: {error}"
-        )
-
-        print(
-            "[RECOMMENDATIONS] "
-            "Using fallback system..."
-        )
-
-        fallback_result = recommend()
-
-        return {
-            "source": "fallback",
-            "recommendations": fallback_result,
-        }
+    return recommend()
 
 
 # ============================================================
@@ -796,9 +703,6 @@ def recommendations():
 #
 # Starts the FastAPI development server when main.py is run
 # directly.
-#
-# The frontend can communicate with the API through the
-# endpoints above while the server is running.
 # ============================================================
 
 if __name__ == "__main__":
