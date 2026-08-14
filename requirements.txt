@@ -28,9 +28,11 @@ Thumbs.db
 
 
 
+pandas
 fastapi
 uvicorn
 python-multipart
 requests
 opencv-python
 zxing-cpp
+PyTorch
