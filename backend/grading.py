@@ -1,5 +1,3 @@
-# grading.py
-
 from models import Product
 
 

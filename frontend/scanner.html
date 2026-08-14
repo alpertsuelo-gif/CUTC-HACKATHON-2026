@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Barcode Scanner</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="scan-options">
+    <h1 class="ceres-title" style="font-size: 2.4rem;">Scan Product</h1>
+  </div>
+
+  <div class="controls">
+    <div class="file-upload-section">
+      <input type="file" id="file-input" accept="image/*" capture="environment">
+      <button id="upload-btn">Upload Image</button>
+      <p id="upload-hint">Select or take a photo</p>
+    </div>
+
+    <div id="manual-entry" class="manual-entry hidden">
+      <input type="text" id="manual-input" placeholder="Enter barcode number" inputmode="numeric">
+      <button id="manual-submit">Search</button>
+      <button id="manual-cancel">Cancel</button>
+    </div>
+
+    <button id="manual-btn" style="margin-top: 10px; padding: 8px 14px;">Manual Entry</button>
+  </div>
+
+  <div id="loading" class="loading hidden">
+    <p>Processing image...</p>
+  </div>
+
+  <div id="product-info" class="product-info hidden">
+    <h2 id="product-name">Product Name</h2>
+    <p><strong>Brand:</strong> <span id="product-brand">--</span></p>
+    <p><strong>Barcode:</strong> <span id="product-barcode">--</span></p>
+    <p><strong>Nutriscore:</strong> <span id="product-nutriscore">--</span></p>
+    
+    <div class="product-grade">
+      <p><strong>Grade:</strong> <span id="product-grade">--</span></p>
+    </div>
+
+    <div class="nutrition-info" id="nutrition-info" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.2);">
+      <h3>Nutrition Info</h3>
+      <p><strong>Energy:</strong> <span id="product-energy">--</span> kJ</p>
+      <p><strong>Protein:</strong> <span id="product-protein">--</span> g</p>
+      <p><strong>Fat:</strong> <span id="product-fat">--</span> g</p>
+      <p><strong>Carbs:</strong> <span id="product-carbs">--</span> g</p>
+      <p><strong>Sugars:</strong> <span id="product-sugars">--</span> g</p>
+      <p><strong>Salt:</strong> <span id="product-salt">--</span> g</p>
+    </div>
+
+    <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: center;">
+      <button id="add-to-cart-btn" style="flex: 1; padding: 12px 20px; background: #2e7d32; border: none; color: white; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 1rem;">✓ ADD TO CART</button>
+      <button id="clear-product-btn" style="flex: 1; padding: 12px 20px; background: #666; border: none; color: white; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 1rem;">Clear</button>
+    </div>
+  </div>
+
+  <div id="error-msg" class="error-msg hidden">
+    <p id="error-text">Error occurred</p>
+    <button id="error-close">Close</button>
+  </div>
+
+  <footer class="bottom-nav">
+    <a href="home.html" class="nav-item">
+      <svg viewBox="0 0 24 24" class="nav-icon"><path d="M12 3l9 8h-3v9h-5v-6H11v6H6v-9H3z"/></svg>
+      <span>Home</span>
+    </a>
+    <a href="cart.html" class="nav-item">
+      <svg viewBox="0 0 24 24" class="nav-icon"><path d="M7 4h-2l-1 2H2v2h2l3.6 7.59-1.35 2.44A2 2 0 0 0 8 21h11v-2H8l1.1-2h7.45a2 2 0 0 0 1.8-1.11l3.24-6.49A1 1 0 0 0 20.7 8H6.21l-.94-2H7z"/><circle cx="9" cy="21" r="1.5"/><circle cx="18" cy="21" r="1.5"/></svg>
+      <span>Cart</span>
+    </a>
+    <a href="profile.html" class="nav-item">
+      <svg viewBox="0 0 24 24" class="nav-icon"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6v1H4z"/></svg>
+      <span>Profile</span>
+    </a>
+  </footer>
+
+  <script>
+    const API_BASE = 'http://localhost:8000';
+    const gradeColors = { A: "#2e7d32", B: "#8bc34a", C: "#fbc02d", D: "#ef6c00", E: "#c62828" };
+
+    const fileInput = document.getElementById('file-input');
+    const uploadBtn = document.getElementById('upload-btn');
+    const uploadHint = document.getElementById('upload-hint');
+    const manualBtn = document.getElementById('manual-btn');
+    const manualEntry = document.getElementById('manual-entry');
+    const manualInput = document.getElementById('manual-input');
+    const manualSubmit = document.getElementById('manual-submit');
+    const manualCancel = document.getElementById('manual-cancel');
+    const loadingDiv = document.getElementById('loading');
+    const productInfo = document.getElementById('product-info');
+    const errorDiv = document.getElementById('error-msg');
+    const errorText = document.getElementById('error-text');
+    const errorClose = document.getElementById('error-close');
+    const addToCartBtn = document.getElementById('add-to-cart-btn');
+    const clearProductBtn = document.getElementById('clear-product-btn');
+
+    let currentProduct = null;
+    let currentGrading = null;
+
+    function showError(message) {
+      errorText.textContent = message;
+      errorDiv.classList.remove('hidden');
+    }
+
+    function hideError() {
+      errorDiv.classList.add('hidden');
+    }
+
+    function showLoading() {
+      loadingDiv.classList.remove('hidden');
+      productInfo.classList.add('hidden');
+      hideError();
+    }
+
+    function hideLoading() {
+      loadingDiv.classList.add('hidden');
+    }
+
+    function displayProduct(product, grading) {
+      currentProduct = product;
+      currentGrading = grading;
+
+      document.getElementById('product-name').textContent = product.name || 'Unknown';
+      document.getElementById('product-brand').textContent = product.brand || '--';
+      document.getElementById('product-barcode').textContent = product.barcode || '--';
+      document.getElementById('product-nutriscore').textContent = product.nutriscore || '--';
+      
+      const gradeSpan = document.getElementById('product-grade');
+      gradeSpan.textContent = grading.grade || '?';
+      gradeSpan.style.color = gradeColors[grading.grade] || '#999';
+      gradeSpan.style.fontWeight = 'bold';
+      gradeSpan.style.fontSize = '1.2rem';
+
+      if (product.energy_kj) {
+        document.getElementById('product-energy').textContent = product.energy_kj;
+        document.getElementById('nutrition-info').style.display = 'block';
+      }
+      if (product.protein) document.getElementById('product-protein').textContent = product.protein;
+      if (product.fat) document.getElementById('product-fat').textContent = product.fat;
+      if (product.carbohydrates) document.getElementById('product-carbs').textContent = product.carbohydrates;
+      if (product.sugars) document.getElementById('product-sugars').textContent = product.sugars;
+      if (product.salt) document.getElementById('product-salt').textContent = product.salt;
+
+      hideLoading();
+      productInfo.classList.remove('hidden');
+    }
+
+    async function scanImage(file) {
+      showLoading();
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const response = await fetch(`${API_BASE}/scan`, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.detail || 'Failed to scan image');
+        }
+
+        const data = await response.json();
+        displayProduct(data.product, data.grading);
+      } catch (error) {
+        hideLoading();
+        showError(error.message || 'Error scanning image');
+      }
+    }
+
+    async function lookup(barcode) {
+      showLoading();
+      try {
+        const response = await fetch(`${API_BASE}/product/${barcode}`);
+        
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.detail || 'Product not found');
+        }
+
+        const data = await response.json();
+        displayProduct(data.product, data.grading);
+      } catch (error) {
+        hideLoading();
+        showError(error.message || 'Error looking up product');
+      }
+    }
+
+    async function addToCart(barcode) {
+      try {
+        const response = await fetch(`${API_BASE}/cart/add/${barcode}`, {
+          method: 'POST'
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.detail || 'Failed to add to cart');
+        }
+
+        showError('✓ Added to cart!');
+        setTimeout(() => hideError(), 2000);
+      } catch (error) {
+        showError(error.message || 'Error adding to cart');
+      }
+    }
+
+    // Event listeners
+    uploadBtn.addEventListener('click', () => fileInput.click());
+    
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        uploadHint.textContent = `Selected: ${file.name}`;
+        scanImage(file);
+      }
+    });
+
+    manualBtn.addEventListener('click', () => {
+      productInfo.classList.add('hidden');
+      hideError();
+      manualEntry.classList.remove('hidden');
+      manualInput.value = '';
+      manualInput.focus();
+    });
+
+    manualSubmit.addEventListener('click', () => {
+      const barcode = manualInput.value.trim();
+      if (barcode) {
+        manualEntry.classList.add('hidden');
+        lookup(barcode);
+      }
+    });
+
+    manualCancel.addEventListener('click', () => {
+      manualEntry.classList.add('hidden');
+    });
+
+    manualInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') manualSubmit.click();
+    });
+
+    addToCartBtn.addEventListener('click', () => {
+      if (currentProduct) {
+        addToCart(currentProduct.barcode);
+      }
+    });
+
+    clearProductBtn.addEventListener('click', () => {
+      productInfo.classList.add('hidden');
+      hideError();
+      fileInput.value = '';
+      uploadHint.textContent = 'Select or take a photo';
+      currentProduct = null;
+      currentGrading = null;
+    });
+
+    errorClose.addEventListener('click', hideError);
+  </script>
+</body>
+</html>
