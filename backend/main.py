@@ -2,8 +2,28 @@
 #
 # CERES backend API.
 #
+# Main structure:
 #
-# The API is responsible for connecting the frontend to the
+#   Frontend
+#       ↓
+#   FastAPI endpoints
+#       ↓
+#   ┌───────────────┬───────────────┬──────────────────┐
+#   │   scanner.py  │   products.py │     cart.py      │
+#   │               │               │                  │
+#   │ Barcode scan  │ Product data  │ Cart management  │
+#   └───────────────┴───────────────┴──────────────────┘
+#                       ↓
+#                  grading.py
+#                       ↓
+#             recommendation system
+#
+# Recommendation order:
+#
+#   1. recommendations_ai.py  ← primary
+#   2. recommendations.py     ← fallback
+#
+# main.py is responsible for connecting the frontend to the
 # backend modules and converting Python objects into JSON-safe
 # responses.
 
@@ -20,6 +40,7 @@ from models import Product
 from scanner import scan_product
 from products import get_product
 from grading import grade_product
+
 from cart import (
     add_product,
     remove_product,
@@ -27,6 +48,11 @@ from cart import (
     analyze_cart,
     cart,
 )
+
+# Primary recommendation system.
+from recommendations_ai import recommend_for_cart
+
+# Backup recommendation system.
 from recommendations import recommend
 
 
@@ -45,7 +71,7 @@ ALLOWED_EXTENSIONS = {
     ".webp",
 }
 
-# Lock used when reading or modifying the shared cart.
+# Protect shared cart operations from simultaneous mutations.
 _cart_lock = threading.Lock()
 
 
@@ -76,20 +102,15 @@ def dict_to_product(data: dict) -> Product:
     """
     Convert a product dictionary into a Product object.
 
-    products.py returns dictionaries so that the product lookup
-    layer remains independent from the Product model.
+    products.py returns dictionaries while the rest of the
+    backend works with Product objects.
     """
 
     if "error" in data:
         raise ValueError(data["error"])
 
     return Product(
-        barcode=str(
-            data.get(
-                "barcode",
-                ""
-            )
-        ),
+        barcode=str(data.get("barcode", "")),
         name=data.get("name"),
         brand=data.get("brand"),
         nutriscore=data.get("nutriscore"),
@@ -113,8 +134,7 @@ def product_response(
     grading: dict
 ) -> dict:
     """
-    Convert a Product object and its grading result into
-    JSON-safe data for the frontend.
+    Convert a Product and grading result into JSON-safe data.
     """
 
     return {
@@ -130,9 +150,7 @@ def cart_response() -> list:
 
     return [
         {
-            "product": asdict(
-                item["product"]
-            ),
+            "product": asdict(item["product"]),
             "grading": item["grading"],
         }
         for item in get_cart()
@@ -144,19 +162,19 @@ def _validate_upload(
     contents: bytes
 ) -> str:
     """
-    Validate an uploaded image and return its file extension.
+    Validate an uploaded image and return its safe file suffix.
     """
 
     if not file.filename:
         raise HTTPException(
             status_code=400,
-            detail="No file provided"
+            detail="No file provided",
         )
 
     if not contents:
         raise HTTPException(
             status_code=400,
-            detail="Uploaded file is empty"
+            detail="Uploaded file is empty",
         )
 
     if len(contents) > MAX_UPLOAD_SIZE_BYTES:
@@ -197,18 +215,18 @@ def root():
 
     return {
         "name": "CERES API",
-        "status": "running"
+        "status": "running",
     }
 
 
 @app.get("/health")
 def health():
     """
-    Health check used to confirm that the backend is running.
+    Backend health check.
     """
 
     return {
-        "status": "ok"
+        "status": "ok",
     }
 
 
@@ -221,7 +239,7 @@ async def scan(
     file: UploadFile = File(...)
 ):
     """
-    Receive an image, decode its barcode, retrieve the product,
+    Receive an image, scan its barcode, retrieve the product,
     and calculate its CERES grade.
     """
 
@@ -229,7 +247,7 @@ async def scan(
 
     suffix = _validate_upload(
         file,
-        contents
+        contents,
     )
 
     temp_path = None
@@ -237,12 +255,12 @@ async def scan(
     try:
 
         # ----------------------------------------------------
-        # Save uploaded image temporarily
+        # Save uploaded image temporarily.
         # ----------------------------------------------------
 
         with tempfile.NamedTemporaryFile(
             delete=False,
-            suffix=suffix
+            suffix=suffix,
         ) as temp_file:
 
             temp_file.write(
@@ -252,7 +270,7 @@ async def scan(
             temp_path = temp_file.name
 
         # ----------------------------------------------------
-        # Scan barcode
+        # Scan barcode.
         # ----------------------------------------------------
 
         scanned = scan_product(
@@ -260,7 +278,7 @@ async def scan(
         )
 
         # ----------------------------------------------------
-        # Resolve product
+        # Resolve product.
         # ----------------------------------------------------
 
         if "error" not in scanned:
@@ -274,12 +292,11 @@ async def scan(
             )
 
             if not barcode:
-
                 raise HTTPException(
                     status_code=404,
                     detail=scanned.get(
                         "error",
-                        "Could not identify barcode"
+                        "Could not identify barcode",
                     ),
                 )
 
@@ -288,7 +305,6 @@ async def scan(
             )
 
             if "error" in product_data:
-
                 raise HTTPException(
                     status_code=404,
                     detail=(
@@ -298,7 +314,7 @@ async def scan(
                 )
 
         # ----------------------------------------------------
-        # Convert and grade
+        # Convert and grade.
         # ----------------------------------------------------
 
         product = dict_to_product(
@@ -311,7 +327,7 @@ async def scan(
 
         return product_response(
             product,
-            grading
+            grading,
         )
 
     except HTTPException:
@@ -321,7 +337,7 @@ async def scan(
 
         raise HTTPException(
             status_code=422,
-            detail=str(error)
+            detail=str(error),
         )
 
     except Exception:
@@ -357,10 +373,9 @@ def product(
     """
 
     if not barcode.isdigit():
-
         raise HTTPException(
             status_code=400,
-            detail="Invalid barcode format"
+            detail="Invalid barcode format",
         )
 
     data = get_product(
@@ -368,10 +383,9 @@ def product(
     )
 
     if "error" in data:
-
         raise HTTPException(
             status_code=404,
-            detail="Product not found"
+            detail="Product not found",
         )
 
     product_object = dict_to_product(
@@ -384,7 +398,7 @@ def product(
 
     return product_response(
         product_object,
-        grading
+        grading,
     )
 
 
@@ -402,13 +416,11 @@ def cart_endpoint():
 
         items = cart_response()
 
-        total = len(
-            cart
-        )
+        total = len(cart)
 
     return {
         "items": items,
-        "total_items": total
+        "total_items": total,
     }
 
 
@@ -421,10 +433,9 @@ def add_to_cart(
     """
 
     if not barcode.isdigit():
-
         raise HTTPException(
             status_code=400,
-            detail="Invalid barcode format"
+            detail="Invalid barcode format",
         )
 
     data = get_product(
@@ -432,10 +443,9 @@ def add_to_cart(
     )
 
     if "error" in data:
-
         raise HTTPException(
             status_code=404,
-            detail="Product not found"
+            detail="Product not found",
         )
 
     product_object = dict_to_product(
@@ -450,7 +460,7 @@ def add_to_cart(
 
         add_product(
             product_object,
-            grading
+            grading,
         )
 
         items = cart_response()
@@ -460,7 +470,7 @@ def add_to_cart(
         "message": "Product added to cart",
         "item": product_response(
             product_object,
-            grading
+            grading,
         ),
         "cart": items,
     }
@@ -471,7 +481,7 @@ def remove_from_cart(
     barcode: str
 ):
     """
-    Remove a product from the cart using its barcode.
+    Remove a product from the cart.
     """
 
     with _cart_lock:
@@ -481,10 +491,9 @@ def remove_from_cart(
         )
 
         if not removed:
-
             raise HTTPException(
                 status_code=404,
-                detail="Product not found in cart"
+                detail="Product not found in cart",
             )
 
         items = cart_response()
@@ -499,7 +508,7 @@ def remove_from_cart(
 @app.delete("/cart")
 def clear_cart():
     """
-    Remove every product from the cart.
+    Clear the entire cart.
     """
 
     with _cart_lock:
@@ -509,7 +518,7 @@ def clear_cart():
     return {
         "success": True,
         "message": "Cart cleared",
-        "cart": []
+        "cart": [],
     }
 
 
@@ -534,15 +543,11 @@ def cart_analysis():
 
         analysis = analyze_cart()
 
-    # --------------------------------------------------------
-    # Convert Product objects into JSON-safe dictionaries.
-    # --------------------------------------------------------
-
     analysis["low_rated_items"] = [
         asdict(product)
         for product in analysis.get(
             "low_rated_items",
-            []
+            [],
         )
     ]
 
@@ -550,7 +555,7 @@ def cart_analysis():
         asdict(product)
         for product in analysis.get(
             "low_confidence_items",
-            []
+            [],
         )
     ]
 
@@ -566,30 +571,93 @@ def recommendations():
     """
     Generate product recommendations based on the current cart.
 
-    recommendation.py handles:
-        - cart analysis
-        - candidate discovery
-        - Open Food Facts search
-        - candidate grading
-        - recommendation ranking
+    Primary:
+        recommendations_ai.py
 
-    The result is returned directly because the frontend expects
-    a list of recommendation objects.
+    Fallback:
+        recommendations.py
+
+    The cart lock is released before recommendation generation
+    so a slow AI/API request does not block cart operations.
     """
+
+    # --------------------------------------------------------
+    # Take a snapshot of the cart.
+    # --------------------------------------------------------
+
+    with _cart_lock:
+
+        products = [
+            item["product"]
+            for item in get_cart()
+        ]
+
+    # --------------------------------------------------------
+    # PRIMARY: AI RECOMMENDATIONS
+    # --------------------------------------------------------
 
     try:
 
-        return recommend()
-
-    except Exception:
-
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "An error occurred while "
-                "generating recommendations"
-            ),
+        ai_result = recommend_for_cart(
+            products
         )
+
+        # ----------------------------------------------------
+        # Convert target Product object into a dictionary.
+        # ----------------------------------------------------
+
+        if ai_result.get("target") is not None:
+
+            ai_result["target"] = asdict(
+                ai_result["target"]
+            )
+
+        # ----------------------------------------------------
+        # Convert alternative Product objects into dictionaries.
+        # ----------------------------------------------------
+
+        ai_result["alternatives"] = [
+
+            {
+                **alternative,
+                "product": asdict(
+                    alternative["product"]
+                ),
+            }
+
+            for alternative
+            in ai_result.get(
+                "alternatives",
+                [],
+            )
+        ]
+
+        return {
+            "source": "ai",
+            "recommendations": ai_result,
+        }
+
+    # --------------------------------------------------------
+    # FALLBACK: RULE-BASED RECOMMENDATIONS
+    # --------------------------------------------------------
+
+    except Exception as error:
+
+        print(
+            f"[RECOMMENDATION AI] Failed: {error}"
+        )
+
+        print(
+            "[RECOMMENDATIONS] "
+            "Using fallback system..."
+        )
+
+        fallback_result = recommend()
+
+        return {
+            "source": "fallback",
+            "recommendations": fallback_result,
+        }
 
 
 # ============================================================
@@ -604,5 +672,5 @@ if __name__ == "__main__":
         "main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True
+        reload=True,
     )
