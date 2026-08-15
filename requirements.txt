@@ -1,25 +1,3 @@
-# Virtual environment
-.venv/
-venv/
-
-# Environment variables / API keys
-.env
-
-# IDE files
-.vscode/
-.idea/
-
-# Large datasets
-data/raw/
-data/processed/
-
-# OS files
-.DS_Store
-Thumbs.db
-
-
-
-
 pandas
 fastapi
 uvicorn
@@ -30,6 +8,3 @@ zxing-cpp
 numpy
 scikit-learn
 joblib
-opencv-python
-zxing-cpp
-requests
