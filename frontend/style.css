@@ -6,8 +6,8 @@ body {
   justify-content: center;
   align-items: center;
   gap: 16px;
-  background: url('') no-repeat center center, #00FF0080;
-  background-size: cover;
+  background: linear-gradient(135deg, #0f3d1b 0%, #1a4d2e 100%);
+  color: #f5f5f5;
   font-family: "Lucida Console", Monaco, monospace;
 }
 
@@ -29,11 +29,9 @@ body {
   border-radius: 20px;
   width: 320px;
 
-  background: rgba(255, 255, 255, 0.15);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
-  backdrop-filter: blur(16px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+  background: rgba(10, 15, 12, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35);
 
   cursor: pointer;
   transition: transform 0.2s ease, background 0.2s ease;
@@ -41,7 +39,7 @@ body {
 
 .scan-glass-card:hover {
   transform: scale(1.03);
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(16, 22, 18, 0.8);
 }
 
 .scan-glass-card:active {
@@ -122,11 +120,9 @@ canvas.drawingBuffer {
 }
 
 .glass-card {
-  background: rgba(255, 255, 255, 0.15);
-  -webkit-backdrop-filter: blur(12px) saturate(180%);
-  backdrop-filter: blur(12px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+  background: rgba(10, 15, 12, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35);
   border-radius: 16px;
   padding: 24px;
   color: #ffffff;
@@ -148,7 +144,9 @@ canvas.drawingBuffer {
 .manual-entry input {
   padding: 8px 10px;
   border-radius: 6px;
-  border: 1px solid #ccc;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
   font-size: 1rem;
   min-width: 200px;
 }
@@ -156,7 +154,9 @@ canvas.drawingBuffer {
 .manual-entry button {
   padding: 8px 14px;
   border-radius: 6px;
-  border: 1px solid #ccc;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
   cursor: pointer;
 }
 
@@ -200,8 +200,8 @@ canvas.drawingBuffer {
 
 #upload-btn {
   padding: 12px 24px;
-  background: rgba(255, 255, 255, 0.25);
-  border: 2px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid rgba(255, 255, 255, 0.15);
   color: white;
   font-weight: 600;
   border-radius: 8px;
@@ -210,7 +210,7 @@ canvas.drawingBuffer {
 }
 
 #upload-btn:hover {
-  background: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.14);
 }
 
 #upload-hint {
@@ -288,7 +288,7 @@ canvas.drawingBuffer {
   box-sizing: border-box;
   padding: 12px;
   background: conic-gradient(
-    #007506 0deg 72deg,
+    #2e7d32 0deg 72deg,
     #8bc34a 72deg 144deg,
     #fbc02d 144deg 216deg,
     #ef6c00 216deg 288deg,
