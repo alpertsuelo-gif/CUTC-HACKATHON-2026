@@ -135,14 +135,8 @@ FOOD_GROUPS = {
 
 def identify_food_group(categories):
     """
-    Determine the most likely food group from the Open Food Facts
-    category string.
-
-    Open Food Facts may return categories as a comma-separated
-    string containing multiple categories.
-
-    Returns:
-        str: identified food group or "unknown"
+    Determine the most likely food group from Open Food Facts
+    categories.
     """
 
     if not categories:
@@ -150,7 +144,7 @@ def identify_food_group(categories):
 
     categories = categories.lower()
 
-    # Check more specific groups first.
+    # More specific categories first.
     for group, keywords in FOOD_GROUPS.items():
         for keyword in keywords:
             if keyword in categories:
@@ -165,7 +159,7 @@ def identify_food_group(categories):
 
 def add_score(score, breakdown, factor, points):
     """
-    Add points to the total score and record the reason.
+    Add points to the score and record the reason.
     """
 
     score += points
@@ -184,9 +178,15 @@ def add_score(score, breakdown, factor, points):
 
 def score_energy(product, score, breakdown):
     """
-    Score energy density.
+    Energy should be treated as a relatively minor factor.
 
-    Thresholds are slightly adjusted depending on food group.
+    High energy density is not automatically unhealthy:
+        - oats
+        - nuts
+        - seeds
+        - whole grains
+
+    can naturally be energy dense while still being nutritious.
     """
 
     if product.energy_kj is None:
@@ -195,41 +195,73 @@ def score_energy(product, score, breakdown):
     energy = product.energy_kj
     group = identify_food_group(product.categories)
 
-    # Beverages generally have lower energy density.
-    if group == "beverage":
-        if energy > 300:
+    # Whole grains and legumes
+    # should not be heavily penalized for energy.
+    if group in {
+        "whole_grain",
+        "legume",
+        "cereal",
+        "bread",
+    }:
+
+        if energy > 2500:
             score = add_score(
-                score, breakdown, "energy", -2
-            )
-        elif energy > 150:
-            score = add_score(
-                score, breakdown, "energy", -1
+                score,
+                breakdown,
+                "energy",
+                -1
             )
         else:
             breakdown["energy"] = 0
 
-    # Nuts naturally have high energy density, so avoid
-    # excessively penalizing them.
+    # Nuts and seeds are naturally energy dense.
     elif group == "nuts":
+
         if energy > 3000:
             score = add_score(
-                score, breakdown, "energy", -2
+                score,
+                breakdown,
+                "energy",
+                -1
             )
-        elif energy > 2500:
+        else:
+            breakdown["energy"] = 0
+
+    # Beverages
+    elif group == "beverage":
+
+        if energy > 300:
             score = add_score(
-                score, breakdown, "energy", -1
+                score,
+                breakdown,
+                "energy",
+                -2
+            )
+        elif energy > 150:
+            score = add_score(
+                score,
+                breakdown,
+                "energy",
+                -1
             )
         else:
             breakdown["energy"] = 0
 
     else:
-        if energy > 2500:
+
+        if energy > 3000:
             score = add_score(
-                score, breakdown, "energy", -2
+                score,
+                breakdown,
+                "energy",
+                -2
             )
-        elif energy > 1500:
+        elif energy > 2000:
             score = add_score(
-                score, breakdown, "energy", -1
+                score,
+                breakdown,
+                "energy",
+                -1
             )
         else:
             breakdown["energy"] = 0
@@ -243,10 +275,10 @@ def score_energy(product, score, breakdown):
 
 def score_sugar(product, score, breakdown):
     """
-    Score sugar content.
+    Sugar is treated differently depending on food group.
 
-    Added/free sugar is not always directly available from
-    Open Food Facts, so this uses total sugar as a proxy.
+    Naturally occurring sugar in fruit and dairy is much less
+    concerning than high sugar in soft drinks or confectionery.
     """
 
     if product.sugars is None:
@@ -255,56 +287,137 @@ def score_sugar(product, score, breakdown):
     sugar = product.sugars
     group = identify_food_group(product.categories)
 
-    # Naturally sweet foods such as fruit are treated differently.
+    # Fruit
     if group == "fruit":
+
         if sugar > 30:
             score = add_score(
-                score, breakdown, "sugars", -1
+                score,
+                breakdown,
+                "sugars",
+                -1
             )
         else:
             breakdown["sugars"] = 0
 
+    # Dairy contains naturally occurring lactose.
     elif group == "dairy":
-        # Dairy contains naturally occurring lactose.
-        if sugar > 15:
+
+        if sugar > 20:
             score = add_score(
-                score, breakdown, "sugars", -2
+                score,
+                breakdown,
+                "sugars",
+                -1
             )
-        elif sugar > 7:
+        elif sugar > 12:
             score = add_score(
-                score, breakdown, "sugars", -1
+                score,
+                breakdown,
+                "sugars",
+                0
             )
         else:
             breakdown["sugars"] = 0
 
+    # Whole grains such as oats can contain small amounts
+    # of naturally occurring carbohydrate/sugar.
+    elif group in {
+        "whole_grain",
+        "cereal",
+        "bread",
+        "legume",
+    }:
+
+        if sugar > 20:
+            score = add_score(
+                score,
+                breakdown,
+                "sugars",
+                -2
+            )
+        elif sugar > 10:
+            score = add_score(
+                score,
+                breakdown,
+                "sugars",
+                -1
+            )
+        else:
+            breakdown["sugars"] = 0
+
+    # Beverages are treated more strictly.
     elif group == "beverage":
+
         if sugar > 10:
             score = add_score(
-                score, breakdown, "sugars", -3
+                score,
+                breakdown,
+                "sugars",
+                -3
             )
         elif sugar > 5:
             score = add_score(
-                score, breakdown, "sugars", -2
+                score,
+                breakdown,
+                "sugars",
+                -2
             )
         elif sugar > 2.5:
             score = add_score(
-                score, breakdown, "sugars", -1
+                score,
+                breakdown,
+                "sugars",
+                -1
+            )
+        else:
+            breakdown["sugars"] = 0
+
+    # Confectionery and desserts.
+    elif group in {
+        "confectionery",
+        "dessert",
+    }:
+
+        if sugar > 30:
+            score = add_score(
+                score,
+                breakdown,
+                "sugars",
+                -3
+            )
+        elif sugar > 15:
+            score = add_score(
+                score,
+                breakdown,
+                "sugars",
+                -2
+            )
+        elif sugar > 8:
+            score = add_score(
+                score,
+                breakdown,
+                "sugars",
+                -1
             )
         else:
             breakdown["sugars"] = 0
 
     else:
+
         if sugar > 22.5:
             score = add_score(
-                score, breakdown, "sugars", -3
+                score,
+                breakdown,
+                "sugars",
+                -2
             )
         elif sugar > 10:
             score = add_score(
-                score, breakdown, "sugars", -2
-            )
-        elif sugar > 5:
-            score = add_score(
-                score, breakdown, "sugars", -1
+                score,
+                breakdown,
+                "sugars",
+                -1
             )
         else:
             breakdown["sugars"] = 0
@@ -318,7 +431,7 @@ def score_sugar(product, score, breakdown):
 
 def score_saturated_fat(product, score, breakdown):
     """
-    Score saturated fat.
+    Saturated fat is important, but should not dominate the score.
     """
 
     if product.saturated_fat is None:
@@ -327,32 +440,55 @@ def score_saturated_fat(product, score, breakdown):
     saturated_fat = product.saturated_fat
     group = identify_food_group(product.categories)
 
-    # Cheese and some dairy products naturally contain
-    # more saturated fat.
-    if group == "dairy":
+    # Nuts/seeds can contain substantial fat while still being
+    # nutritionally beneficial.
+    if group == "nuts":
+
+        if saturated_fat > 15:
+            score = add_score(
+                score,
+                breakdown,
+                "saturated_fat",
+                -1
+            )
+        else:
+            breakdown["saturated_fat"] = 0
+
+    # Dairy
+    elif group == "dairy":
+
         if saturated_fat > 10:
             score = add_score(
-                score, breakdown, "saturated_fat", -2
+                score,
+                breakdown,
+                "saturated_fat",
+                -2
             )
         elif saturated_fat > 5:
             score = add_score(
-                score, breakdown, "saturated_fat", -1
+                score,
+                breakdown,
+                "saturated_fat",
+                -1
             )
         else:
             breakdown["saturated_fat"] = 0
 
     else:
+
         if saturated_fat > 10:
             score = add_score(
-                score, breakdown, "saturated_fat", -3
+                score,
+                breakdown,
+                "saturated_fat",
+                -2
             )
         elif saturated_fat > 5:
             score = add_score(
-                score, breakdown, "saturated_fat", -2
-            )
-        elif saturated_fat > 1.5:
-            score = add_score(
-                score, breakdown, "saturated_fat", -1
+                score,
+                breakdown,
+                "saturated_fat",
+                -1
             )
         else:
             breakdown["saturated_fat"] = 0
@@ -366,7 +502,8 @@ def score_saturated_fat(product, score, breakdown):
 
 def score_salt(product, score, breakdown):
     """
-    Score salt content.
+    Salt remains an important negative factor, but thresholds
+    are slightly relaxed.
     """
 
     if product.salt is None:
@@ -374,18 +511,22 @@ def score_salt(product, score, breakdown):
 
     salt = product.salt
 
-    if salt > 1.5:
+    if salt > 2:
         score = add_score(
-            score, breakdown, "salt", -3
+            score,
+            breakdown,
+            "salt",
+            -2
         )
-    elif salt > 0.75:
+
+    elif salt > 1:
         score = add_score(
-            score, breakdown, "salt", -2
+            score,
+            breakdown,
+            "salt",
+            -1
         )
-    elif salt > 0.3:
-        score = add_score(
-            score, breakdown, "salt", -1
-        )
+
     else:
         breakdown["salt"] = 0
 
@@ -398,10 +539,8 @@ def score_salt(product, score, breakdown):
 
 def score_fiber(product, score, breakdown):
     """
-    Reward fiber.
-
-    Fiber is particularly valuable in cereal, bread,
-    whole-grain and legume products.
+    Strongly reward fiber, especially in whole grains,
+    cereals, bread, and legumes.
     """
 
     if product.fiber is None:
@@ -410,20 +549,37 @@ def score_fiber(product, score, breakdown):
     fiber = product.fiber
     group = identify_food_group(product.categories)
 
-    if group in {"whole_grain", "cereal", "bread", "legume"}:
+    if group in {
+        "whole_grain",
+        "cereal",
+        "bread",
+        "legume",
+    }:
 
         if fiber >= 8:
             score = add_score(
-                score, breakdown, "fiber", 3
+                score,
+                breakdown,
+                "fiber",
+                4
             )
+
         elif fiber >= 5:
             score = add_score(
-                score, breakdown, "fiber", 2
+                score,
+                breakdown,
+                "fiber",
+                3
             )
+
         elif fiber >= 3:
             score = add_score(
-                score, breakdown, "fiber", 1
+                score,
+                breakdown,
+                "fiber",
+                2
             )
+
         else:
             breakdown["fiber"] = 0
 
@@ -431,12 +587,20 @@ def score_fiber(product, score, breakdown):
 
         if fiber >= 6:
             score = add_score(
-                score, breakdown, "fiber", 2
+                score,
+                breakdown,
+                "fiber",
+                2
             )
+
         elif fiber >= 3:
             score = add_score(
-                score, breakdown, "fiber", 1
+                score,
+                breakdown,
+                "fiber",
+                1
             )
+
         else:
             breakdown["fiber"] = 0
 
@@ -449,8 +613,8 @@ def score_fiber(product, score, breakdown):
 
 def score_protein(product, score, breakdown):
     """
-    Reward protein, with a larger benefit for protein-rich
-    food groups.
+    Reward protein without making it a requirement for
+    foods such as oats, fruits, and vegetables.
     """
 
     if product.protein is None:
@@ -464,21 +628,33 @@ def score_protein(product, score, breakdown):
         "meat",
         "fish",
         "dairy",
-        "nuts"
+        "nuts",
     }:
 
         if protein >= 20:
             score = add_score(
-                score, breakdown, "protein", 3
+                score,
+                breakdown,
+                "protein",
+                3
             )
+
         elif protein >= 10:
             score = add_score(
-                score, breakdown, "protein", 2
+                score,
+                breakdown,
+                "protein",
+                2
             )
+
         elif protein >= 5:
             score = add_score(
-                score, breakdown, "protein", 1
+                score,
+                breakdown,
+                "protein",
+                1
             )
+
         else:
             breakdown["protein"] = 0
 
@@ -486,12 +662,20 @@ def score_protein(product, score, breakdown):
 
         if protein >= 10:
             score = add_score(
-                score, breakdown, "protein", 2
+                score,
+                breakdown,
+                "protein",
+                2
             )
+
         elif protein >= 5:
             score = add_score(
-                score, breakdown, "protein", 1
+                score,
+                breakdown,
+                "protein",
+                1
             )
+
         else:
             breakdown["protein"] = 0
 
@@ -499,30 +683,93 @@ def score_protein(product, score, breakdown):
 
 
 # ============================================================
-# POSITIVE FOOD-GROUP FACTORS
+# FOOD GROUP
 # ============================================================
 
 def score_food_group(product, score, breakdown):
     """
-    Apply a small positive bonus for nutritionally favorable
-    food groups.
+    Strongly reward naturally nutritious food groups.
 
-    This prevents the system from relying entirely on nutrients.
+    This is the main change that allows foods such as plain oats,
+    lentils, fruits, and vegetables to achieve A grades.
     """
 
     group = identify_food_group(product.categories)
 
-    if group in {"fruit", "vegetable", "legume"}:
+    if group == "vegetable":
+
         score = add_score(
-            score, breakdown, "food_group", 2
+            score,
+            breakdown,
+            "food_group",
+            5
         )
 
-    elif group in {"whole_grain", "fish", "nuts"}:
+    elif group == "fruit":
+
         score = add_score(
-            score, breakdown, "food_group", 1
+            score,
+            breakdown,
+            "food_group",
+            5
+        )
+
+    elif group == "legume":
+
+        score = add_score(
+            score,
+            breakdown,
+            "food_group",
+            5
+        )
+
+    elif group == "whole_grain":
+
+        score = add_score(
+            score,
+            breakdown,
+            "food_group",
+            5
+        )
+
+    elif group == "fish":
+
+        score = add_score(
+            score,
+            breakdown,
+            "food_group",
+            4
+        )
+
+    elif group == "nuts":
+
+        score = add_score(
+            score,
+            breakdown,
+            "food_group",
+            4
+        )
+
+    elif group == "dairy":
+
+        score = add_score(
+            score,
+            breakdown,
+            "food_group",
+            2
+        )
+
+    elif group == "bread":
+
+        score = add_score(
+            score,
+            breakdown,
+            "food_group",
+            2
         )
 
     else:
+
         breakdown["food_group"] = 0
 
     return score
@@ -534,32 +781,84 @@ def score_food_group(product, score, breakdown):
 
 def score_processing(product, score, breakdown):
     """
-    Apply modest penalties to categories that frequently
-    correspond to highly processed or discretionary foods.
+    Apply modest penalties to discretionary food categories.
 
-    This is deliberately kept small so that category labels
-    do not overwhelm the nutritional information.
+    These penalties are intentionally small so that nutritional
+    information remains more important than category labels.
     """
 
     group = identify_food_group(product.categories)
 
     if group == "confectionery":
+
         score = add_score(
-            score, breakdown, "food_category", -2
+            score,
+            breakdown,
+            "food_category",
+            -3
         )
 
     elif group == "dessert":
+
         score = add_score(
-            score, breakdown, "food_category", -1
+            score,
+            breakdown,
+            "food_category",
+            -2
         )
 
     elif group == "snack":
+
         score = add_score(
-            score, breakdown, "food_category", -1
+            score,
+            breakdown,
+            "food_category",
+            -1
         )
 
     else:
+
         breakdown["food_category"] = 0
+
+    return score
+
+
+# ============================================================
+# WHOLE FOOD BONUS
+# ============================================================
+
+def score_whole_food(product, score, breakdown):
+    """
+    Give a small additional bonus to foods that are inherently
+    nutritious staples.
+
+    This is especially useful for:
+        - oats
+        - whole grains
+        - legumes
+        - fruits
+        - vegetables
+    """
+
+    group = identify_food_group(product.categories)
+
+    if group in {
+        "fruit",
+        "vegetable",
+        "legume",
+        "whole_grain",
+    }:
+
+        score = add_score(
+            score,
+            breakdown,
+            "whole_food",
+            2
+        )
+
+    else:
+
+        breakdown["whole_food"] = 0
 
     return score
 
@@ -570,11 +869,7 @@ def score_processing(product, score, breakdown):
 
 def calculate_data_completeness(product):
     """
-    Calculate how much of the nutritional information is available.
-
-    This is useful because an apparently healthy score based on
-    incomplete information should not be presented with the same
-    confidence as a score based on complete information.
+    Calculate how much nutritional information is available.
     """
 
     fields = [
@@ -587,7 +882,8 @@ def calculate_data_completeness(product):
     ]
 
     available = sum(
-        value is not None for value in fields
+        value is not None
+        for value in fields
     )
 
     return available / len(fields)
@@ -599,22 +895,22 @@ def calculate_data_completeness(product):
 
 def convert_score_to_grade(score):
     """
-    Convert numerical score into an A-E grade.
+    Convert the internal score into an A-E grade.
 
-    This is our project's grading scale, not the official
-    Nutri-Score algorithm.
+    The thresholds are intentionally more forgiving than the
+    previous version.
     """
 
-    if score >= 8:
+    if score >= 7:
         return "A"
 
-    elif score >= 4:
+    elif score >= 3:
         return "B"
 
-    elif score >= 0:
+    elif score >= -1:
         return "C"
 
-    elif score >= -4:
+    elif score >= -5:
         return "D"
 
     else:
@@ -627,20 +923,7 @@ def convert_score_to_grade(score):
 
 def grade_product(product: Product) -> dict:
     """
-    Calculate the overall health grade for a Product.
-
-    The function combines:
-        - energy
-        - sugar
-        - saturated fat
-        - salt
-        - fiber
-        - protein
-        - food group
-        - category/processing considerations
-
-    Returns a dictionary containing the grade, score,
-    food group, confidence, and scoring breakdown.
+    Calculate the overall CERES health grade.
     """
 
     if not isinstance(product, Product):
@@ -651,52 +934,97 @@ def grade_product(product: Product) -> dict:
     score = 0
     breakdown = {}
 
+    # --------------------------------------------------------
     # Identify food group
+    # --------------------------------------------------------
+
     food_group = identify_food_group(
         product.categories
     )
 
+    # --------------------------------------------------------
     # Negative factors
+    # --------------------------------------------------------
+
     score = score_energy(
-        product, score, breakdown
+        product,
+        score,
+        breakdown
     )
 
     score = score_sugar(
-        product, score, breakdown
+        product,
+        score,
+        breakdown
     )
 
     score = score_saturated_fat(
-        product, score, breakdown
+        product,
+        score,
+        breakdown
     )
 
     score = score_salt(
-        product, score, breakdown
+        product,
+        score,
+        breakdown
     )
 
-    # Positive factors
+    # --------------------------------------------------------
+    # Positive nutritional factors
+    # --------------------------------------------------------
+
     score = score_fiber(
-        product, score, breakdown
+        product,
+        score,
+        breakdown
     )
 
     score = score_protein(
-        product, score, breakdown
+        product,
+        score,
+        breakdown
     )
 
-    # Food group
+    # --------------------------------------------------------
+    # Food quality
+    # --------------------------------------------------------
+
     score = score_food_group(
-        product, score, breakdown
+        product,
+        score,
+        breakdown
     )
 
-    # Processing/category consideration
+    score = score_whole_food(
+        product,
+        score,
+        breakdown
+    )
+
+    # --------------------------------------------------------
+    # Processing/category
+    # --------------------------------------------------------
+
     score = score_processing(
-        product, score, breakdown
+        product,
+        score,
+        breakdown
     )
 
+    # --------------------------------------------------------
     # Final grade
+    # --------------------------------------------------------
+
     grade = convert_score_to_grade(score)
 
-    # Determine confidence from available data
-    completeness = calculate_data_completeness(product)
+    # --------------------------------------------------------
+    # Confidence
+    # --------------------------------------------------------
+
+    completeness = calculate_data_completeness(
+        product
+    )
 
     if completeness >= 0.83:
         confidence = "high"
@@ -706,6 +1034,10 @@ def grade_product(product: Product) -> dict:
 
     else:
         confidence = "low"
+
+    # --------------------------------------------------------
+    # Return
+    # --------------------------------------------------------
 
     return {
         "barcode": product.barcode,
@@ -718,11 +1050,13 @@ def grade_product(product: Product) -> dict:
         "grade": grade,
 
         "confidence": confidence,
+
         "data_completeness": round(
-            completeness * 100, 1
+            completeness * 100,
+            1
         ),
 
         "breakdown": breakdown,
 
-        "nutriscore_reference": product.nutriscore
+        "nutriscore_reference": product.nutriscore,
     }

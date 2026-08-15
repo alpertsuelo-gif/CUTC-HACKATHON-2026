@@ -1,7 +1,6 @@
 from pathlib import Path
 import sys
 
-import torch
 import pandas as pd
 
 
@@ -180,34 +179,75 @@ def normalize_cart(cart):
 # CART SCORE
 # ============================================================
 
-def cart_health_score(
-    cart_items,
-):
+def cart_health_score(cart_items):
+    """
+    Calculate a user-friendly 0-100 cart health score.
+
+    Product scores are converted into a softer 0-100 scale
+    before averaging, so healthy products are not penalized
+    excessively.
+    """
 
     if not cart_items:
         return 0.0
 
-    scores = []
+    health_scores = []
 
     for item in cart_items:
 
-        grading = (
-            item["grading"]
-        )
+        grading = item["grading"]
 
-        scores.append(
-            number(
-                grading.get(
-                    "score",
-                    0,
-                )
+        score = number(
+            grading.get(
+                "score",
+                0,
             )
         )
 
-    return sum(scores) / len(
-        scores
-    )
+        # ----------------------------------------------------
+        # Convert CERES score to 0-100.
+        #
+        # A (7+)      -> 90-100
+        # B (3-6.99)  -> 75-89
+        # C (-1-2.99) -> 60-74
+        # D (-5--1.01) -> 35-59
+        # E (<-5)     -> 0-34
+        # ----------------------------------------------------
 
+        if score >= 7:
+            health = 90 + min(
+                (score - 7) * 2,
+                10,
+            )
+
+        elif score >= 3:
+            health = 75 + (
+                (score - 3) / 4
+            ) * 15
+
+        elif score >= -1:
+            health = 60 + (
+                (score + 1) / 4
+            ) * 15
+
+        elif score >= -5:
+            health = 35 + (
+                (score + 5) / 4
+            ) * 25
+
+        else:
+            health = max(
+                0,
+                35 + (score + 5) * 5,
+            )
+
+        health_scores.append(
+            health
+        )
+
+    return sum(health_scores) / len(
+        health_scores
+    )
 
 # ============================================================
 # PRODUCT FEATURES
@@ -391,6 +431,10 @@ def predict(
 # REMOVAL
 # ============================================================
 
+# ============================================================
+# REMOVAL
+# ============================================================
+
 def recommend_removal(
     cart_items,
 ):
@@ -399,9 +443,24 @@ def recommend_removal(
 
     for item in cart_items:
 
-        product = item[
-            "product"
-        ]
+        product = item["product"]
+        grading = item["grading"]
+
+        # ----------------------------------------------------
+        # Only recommend removing products graded D or E.
+        #
+        # A, B, and C products are never considered for removal.
+        # ----------------------------------------------------
+
+        grade = str(
+            grading.get(
+                "grade",
+                "C",
+            )
+        ).upper()
+
+        if grade not in {"D", "E"}:
+            continue
 
         prediction = predict(
             cart_items,
@@ -415,13 +474,14 @@ def recommend_removal(
                     product,
 
                 "grading":
-                    item["grading"],
+                    grading,
 
                 "predicted_change":
                     prediction,
             }
         )
 
+    # No unhealthy products in the cart.
     if not candidates:
         return None
 
@@ -552,7 +612,7 @@ def recommend(
     result = {
         "cart_health_score":
             round(
-                current_score,
+                abs(current_score),
                 3,
             ),
 
@@ -619,7 +679,7 @@ def recommend(
                         "predicted_change"
                     ],
                     3,
-                ),
+                )*16,
 
             "reason":
                 (

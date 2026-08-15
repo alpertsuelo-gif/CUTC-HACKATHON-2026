@@ -50,7 +50,7 @@ from cart import (
 )
 
 # Primary recommendation system.
-from recommendations_ai import recommend_for_cart
+from recommendations_ai import recommend as recommend_ai
 
 # Backup recommendation system.
 from recommendations import recommend
@@ -569,7 +569,7 @@ def cart_analysis():
 @app.get("/recommendations")
 def recommendations():
     """
-    Generate product recommendations based on the current cart.
+    Generate recommendations based on the current cart.
 
     Primary:
         recommendations_ai.py
@@ -577,8 +577,14 @@ def recommendations():
     Fallback:
         recommendations.py
 
-    The cart lock is released before recommendation generation
-    so a slow AI/API request does not block cart operations.
+    The AI recommendation system currently provides:
+        - cart_health_score
+        - add recommendation
+        - remove recommendation
+
+    The cart lock is released before recommendation
+    generation so model inference does not block cart
+    operations.
     """
 
     # --------------------------------------------------------
@@ -598,39 +604,10 @@ def recommendations():
 
     try:
 
-        ai_result = recommend_for_cart(
-            products
+        ai_result = recommend_ai(
+            cart=products,
+            candidate_products=[],
         )
-
-        # ----------------------------------------------------
-        # Convert target Product object into a dictionary.
-        # ----------------------------------------------------
-
-        if ai_result.get("target") is not None:
-
-            ai_result["target"] = asdict(
-                ai_result["target"]
-            )
-
-        # ----------------------------------------------------
-        # Convert alternative Product objects into dictionaries.
-        # ----------------------------------------------------
-
-        ai_result["alternatives"] = [
-
-            {
-                **alternative,
-                "product": asdict(
-                    alternative["product"]
-                ),
-            }
-
-            for alternative
-            in ai_result.get(
-                "alternatives",
-                [],
-            )
-        ]
 
         return {
             "source": "ai",

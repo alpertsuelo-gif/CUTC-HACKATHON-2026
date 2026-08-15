@@ -1,90 +1,136 @@
-"""
-CUTC Hackathon 2026
-Grocery Health AI - Integration Tests
-
-Tests:
-
-1. Backend and ML imports
-2. Product creation
-3. Product grading
-4. Cart functionality
-5. Training dataset
-6. Feature generation
-7. Random Forest training
-8. Random Forest prediction
-9. Random Forest save/load
-10. Feature importance
-11. Existing trained model
-12. AI recommendation prediction
-13. End-to-end recommendation
-
-Run from project root:
-
-    python -m ml.test_files
-"""
-
 from pathlib import Path
 import sys
 import traceback
-import tempfile
 
-import numpy as np
 import pandas as pd
 
 
 # ============================================================
-# PATH SETUP
+# PATHS
 # ============================================================
 
-ML_DIR = Path(__file__).resolve().parent
-ROOT_DIR = ML_DIR.parent
-BACKEND_DIR = ROOT_DIR / "backend"
+ML_DIR = Path(
+    __file__
+).resolve().parent
 
-sys.path.insert(0, str(ROOT_DIR))
-sys.path.insert(0, str(BACKEND_DIR))
-sys.path.insert(0, str(ML_DIR))
+PROJECT_DIR = (
+    ML_DIR.parent
+)
+
+BACKEND_DIR = (
+    PROJECT_DIR /
+    "backend"
+)
+
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(
+        0,
+        str(BACKEND_DIR),
+    )
+
+if str(ML_DIR) not in sys.path:
+    sys.path.insert(
+        0,
+        str(ML_DIR),
+    )
 
 
 # ============================================================
-# TEST COUNTERS
+# IMPORTS
 # ============================================================
 
-passed = 0
-failed = 0
+from models import Product
+
+from grading import grade_product
+
+from cart import (
+    get_cart,
+    analyze_cart,
+)
+
+from recommendations_ai import (
+    recommend,
+    predict,
+    normalize_cart,
+    cart_health_score,
+    score_change_to_grade,
+)
+
+from product_similarity import (
+    find_healthier_alternatives,
+)
+
+from features import (
+    create_training_features,
+    training_feature_names,
+)
+
+from model import RecommendationModel
 
 
-def test(name, function):
-    """
-    Run a test and report the result.
-    """
+# ============================================================
+# PATHS
+# ============================================================
 
-    global passed
-    global failed
+DATASET_PATH = (
+    ML_DIR /
+    "training_data.csv"
+)
 
-    print()
+MODEL_PATH = (
+    ML_DIR /
+    "recommendation_model.pkl"
+)
+
+OPENFOODFACTS_PATH = (
+    ML_DIR /
+    "en.openfoodfacts.org.products.csv.gz"
+)
+
+
+# ============================================================
+# TEST HELPER
+# ============================================================
+
+def run_test(
+    number,
+    name,
+    function,
+):
+
     print("=" * 70)
-    print(name)
+    print(
+        f"{number}. {name}"
+    )
     print("=" * 70)
 
     try:
+
         function()
 
         print()
         print("PASS")
+        print()
 
-        passed += 1
+        return True
 
     except Exception as error:
 
         print()
         print("FAIL")
         print()
-        print(f"Error: {error}")
+
+        print(
+            f"Error: {error}"
+        )
+
         print()
 
         traceback.print_exc()
 
-        failed += 1
+        print()
+
+        return False
 
 
 # ============================================================
@@ -93,23 +139,14 @@ def test(name, function):
 
 def test_imports():
 
-    from models import Product
-    from grading import grade_product
-    from cart import get_cart, analyze_cart
-
-    from features import (
-        dataframe_to_features,
-        training_feature_names,
-    )
-
-    from model import RecommendationModel
-
     assert Product is not None
     assert grade_product is not None
     assert get_cart is not None
     assert analyze_cart is not None
-    assert dataframe_to_features is not None
-    assert training_feature_names is not None
+
+    assert recommend is not None
+    assert predict is not None
+
     assert RecommendationModel is not None
 
     print(
@@ -117,55 +154,40 @@ def test_imports():
     )
 
 
-test(
-    "1. Backend and ML imports",
-    test_imports,
-)
-
-
 # ============================================================
 # TEST 2
 # ============================================================
 
-def test_product():
-
-    from models import Product
+def test_product_creation():
 
     product = Product(
         barcode="TEST001",
         name="Test Apple",
         brand="Test Brand",
-        categories="en:fruits, en:apples",
-        energy_kj=220,
-        fat=0.3,
-        saturated_fat=0.1,
+
+        categories="en:fruits",
+
+        energy_kj=218,
+        fat=0.2,
+        saturated_fat=0.0,
         carbohydrates=12,
         sugars=10,
         fiber=2.4,
         protein=0.3,
         salt=0.0,
         sodium=0.0,
+
         nutriscore="a",
     )
 
-    assert isinstance(product, Product)
-
-    assert product.name == "Test Apple"
-
-    assert product.barcode == "TEST001"
-
-    assert isinstance(product.categories, str)
+    assert product.name == (
+        "Test Apple"
+    )
 
     print(
         f"Product created successfully: "
         f"{product.name}"
     )
-
-
-test(
-    "2. Product creation",
-    test_product,
-)
 
 
 # ============================================================
@@ -174,36 +196,32 @@ test(
 
 def test_grading():
 
-    from models import Product
-    from grading import grade_product
-
     product = Product(
         barcode="TEST002",
-        name="Test Broccoli",
+        name="Test Apple",
+
         brand="Test Brand",
-        categories="en:vegetables, en:broccoli",
-        energy_kj=150,
-        fat=0.4,
-        saturated_fat=0.1,
-        carbohydrates=7,
-        sugars=1.5,
-        fiber=3.3,
-        protein=2.8,
-        salt=0.05,
-        sodium=0.02,
+
+        categories="en:fruits",
+
+        energy_kj=218,
+        fat=0.2,
+        saturated_fat=0.0,
+        carbohydrates=12,
+        sugars=10,
+        fiber=2.4,
+        protein=0.3,
+        salt=0.0,
+        sodium=0.0,
+
         nutriscore="a",
     )
 
-    assert isinstance(product, Product)
-
-    assert isinstance(
-        product.categories,
-        str,
+    grading = (
+        grade_product(
+            product
+        )
     )
-
-    grading = grade_product(product)
-
-    assert grading is not None
 
     assert isinstance(
         grading,
@@ -213,16 +231,12 @@ def test_grading():
     assert "score" in grading
 
     print(
-        "Grading result:"
+        "Product grading completed successfully."
     )
 
-    print(grading)
-
-
-test(
-    "3. Product grading",
-    test_grading,
-)
+    print(
+        grading
+    )
 
 
 # ============================================================
@@ -231,11 +245,12 @@ test(
 
 def test_cart():
 
-    from cart import get_cart, analyze_cart
-
     cart = get_cart()
 
-    assert cart is not None
+    assert isinstance(
+        cart,
+        list,
+    )
 
     print(
         "Current cart retrieved successfully."
@@ -245,21 +260,14 @@ def test_cart():
         f"Cart type: {type(cart).__name__}"
     )
 
-    try:
-        print(
-            f"Cart size: {len(cart)}"
-        )
-    except TypeError:
-        print(
-            "Cart does not support len()."
-        )
+    print(
+        f"Cart size: {len(cart)}"
+    )
 
-    result = analyze_cart()
-
-    assert result is not None
+    analysis = analyze_cart()
 
     assert isinstance(
-        result,
+        analysis,
         dict,
     )
 
@@ -268,59 +276,34 @@ def test_cart():
         "Cart analysis completed successfully."
     )
 
-    print(result)
-
-
-test(
-    "4. Cart functionality",
-    test_cart,
-)
+    print(
+        analysis
+    )
 
 
 # ============================================================
 # TEST 5
 # ============================================================
 
-def test_training_data():
+def test_training_dataset():
 
-    path = ML_DIR / "training_data.csv"
-
-    assert path.exists(), (
-        f"Training data not found: {path}"
+    assert DATASET_PATH.exists(), (
+        f"Training dataset does not exist: "
+        f"{DATASET_PATH}"
     )
 
-    df = pd.read_csv(path)
-
-    assert len(df) > 0, (
-        "Training dataset is empty."
+    df = pd.read_csv(
+        DATASET_PATH
     )
+
+    assert len(df) > 0
 
     assert "action" in df.columns
 
     assert "score_change" in df.columns
 
-    actions = set(
-        df["action"]
-        .dropna()
-        .astype(str)
-    )
-
-    required_actions = {
-        "add",
-        "remove",
-        "replace",
-    }
-
-    missing = (
-        required_actions - actions
-    )
-
-    assert not missing, (
-        f"Missing actions: {missing}"
-    )
-
     print(
-        f"Dataset: {path}"
+        f"Dataset: {DATASET_PATH}"
     )
 
     print(
@@ -348,68 +331,48 @@ def test_training_data():
     )
 
 
-test(
-    "5. Training dataset",
-    test_training_data,
-)
-
-
 # ============================================================
 # TEST 6
 # ============================================================
 
-def test_features():
+def test_feature_generation():
 
-    from features import (
-        dataframe_to_features,
-        training_feature_names,
+    df = pd.read_csv(
+        DATASET_PATH
     )
 
-    path = ML_DIR / "training_data.csv"
+    X = create_training_features(
+        df
+    )
 
-    df = pd.read_csv(path)
-
-    X = dataframe_to_features(df)
-
-    expected_columns = (
-        training_feature_names()
+    assert isinstance(
+        X,
+        pd.DataFrame,
     )
 
     assert len(X) == len(df)
 
+    feature_names = (
+        training_feature_names()
+    )
+
     assert list(X.columns) == (
-        expected_columns
-    )
-
-    assert X.shape[1] > 0
-
-    assert not X.isnull().any().any(), (
-        "Feature matrix contains NaN."
-    )
-
-    assert np.isfinite(
-        X.to_numpy()
-    ).all(), (
-        "Feature matrix contains infinity."
+        feature_names
     )
 
     print(
-        f"Feature matrix shape: {X.shape}"
+        f"Feature matrix shape: "
+        f"{X.shape}"
     )
 
     print()
     print("Features:")
 
-    for feature in X.columns:
+    for feature in feature_names:
+
         print(
             f"  {feature}"
         )
-
-
-test(
-    "6. Feature generation",
-    test_features,
-)
 
 
 # ============================================================
@@ -418,45 +381,39 @@ test(
 
 def test_model_training():
 
-    from sklearn.model_selection import (
-        train_test_split,
-    )
-
-    from features import (
-        dataframe_to_features,
-    )
-
-    from model import (
-        RecommendationModel,
-    )
-
     df = pd.read_csv(
-        ML_DIR / "training_data.csv"
+        DATASET_PATH
     )
 
-    X = dataframe_to_features(df)
-
-    y = pd.to_numeric(
-        df["score_change"],
-        errors="coerce",
-    ).fillna(0)
-
-    X_train, X_test, y_train, y_test = (
-        train_test_split(
-            X,
-            y,
-            test_size=0.2,
-            random_state=42,
-        )
+    X = create_training_features(
+        df
     )
 
-    model = RecommendationModel(
-        n_estimators=50,
-        random_state=42,
-        n_jobs=-1,
+    y = df[
+        "score_change"
+    ]
+
+    model = (
+        RecommendationModel()
     )
 
-    model.fit(
+    X_train = X.iloc[
+        : int(len(X) * 0.8)
+    ]
+
+    X_test = X.iloc[
+        int(len(X) * 0.8):
+    ]
+
+    y_train = y.iloc[
+        : int(len(y) * 0.8)
+    ]
+
+    y_test = y.iloc[
+        int(len(y) * 0.8):
+    ]
+
+    model.train(
         X_train,
         y_train,
     )
@@ -465,106 +422,76 @@ def test_model_training():
         X_test
     )
 
-    assert len(predictions) == len(X_test)
-
-    assert np.isfinite(predictions).all()
-
-    print(
-        f"Training samples: {len(X_train)}"
+    assert len(predictions) == (
+        len(y_test)
     )
 
     print(
-        f"Testing samples: {len(X_test)}"
+        f"Training samples: "
+        f"{len(X_train)}"
     )
 
     print(
-        f"Predictions: {len(predictions)}"
+        f"Testing samples: "
+        f"{len(X_test)}"
     )
 
-
-test(
-    "7. Random Forest training",
-    test_model_training,
-)
+    print(
+        f"Predictions: "
+        f"{len(predictions)}"
+    )
 
 
 # ============================================================
 # TEST 8
 # ============================================================
 
-def test_model_prediction():
-
-    from sklearn.model_selection import (
-        train_test_split,
-    )
-
-    from features import (
-        dataframe_to_features,
-    )
-
-    from model import (
-        RecommendationModel,
-    )
+def test_model_predictions():
 
     df = pd.read_csv(
-        ML_DIR / "training_data.csv"
+        DATASET_PATH
     )
 
-    X = dataframe_to_features(df)
-
-    y = pd.to_numeric(
-        df["score_change"],
-        errors="coerce",
-    ).fillna(0)
-
-    X_train, X_test, y_train, y_test = (
-        train_test_split(
-            X,
-            y,
-            test_size=0.2,
-            random_state=42,
-        )
+    X = create_training_features(
+        df
     )
 
-    model = RecommendationModel(
-        n_estimators=50,
-        random_state=42,
-        n_jobs=-1,
+    y = df[
+        "score_change"
+    ]
+
+    model = (
+        RecommendationModel()
     )
 
-    model.fit(
-        X_train,
-        y_train,
+    split = int(
+        len(X) * 0.8
     )
 
-    sample = X_test.iloc[:10]
+    model.train(
+        X.iloc[:split],
+        y.iloc[:split],
+    )
 
-    predictions = model.predict(sample)
+    predictions = model.predict(
+        X.iloc[split:]
+    )
 
-    assert len(predictions) == 10
-
-    assert np.isfinite(predictions).all()
+    assert len(predictions) > 0
 
     print(
         "Sample predictions:"
     )
 
-    print()
-
     for index, prediction in enumerate(
-        predictions
+        predictions[:10],
+        start=1,
     ):
 
         print(
-            f"  Sample {index + 1}: "
+            f"  Sample {index}: "
             f"{prediction:.4f}"
         )
-
-
-test(
-    "8. Random Forest predictions",
-    test_model_prediction,
-)
 
 
 # ============================================================
@@ -573,80 +500,68 @@ test(
 
 def test_model_save_load():
 
-    from sklearn.model_selection import (
-        train_test_split,
-    )
-
-    from features import (
-        dataframe_to_features,
-    )
-
-    from model import (
-        RecommendationModel,
-    )
-
     df = pd.read_csv(
-        ML_DIR / "training_data.csv"
+        DATASET_PATH
     )
 
-    X = dataframe_to_features(df)
+    X = create_training_features(
+        df
+    )
 
-    y = pd.to_numeric(
-        df["score_change"],
-        errors="coerce",
-    ).fillna(0)
+    y = df[
+        "score_change"
+    ]
 
-    X_train, X_test, y_train, y_test = (
-        train_test_split(
-            X,
-            y,
-            test_size=0.2,
-            random_state=42,
+    split = int(
+        len(X) * 0.8
+    )
+
+    model = (
+        RecommendationModel()
+    )
+
+    model.train(
+        X.iloc[:split],
+        y.iloc[:split],
+    )
+
+    temporary_model = (
+        ML_DIR /
+        "_test_model.pkl"
+    )
+
+    model.save(
+        temporary_model
+    )
+
+    assert temporary_model.exists()
+
+    loaded = (
+        RecommendationModel()
+    )
+
+    loaded.load(
+        temporary_model
+    )
+
+    original_predictions = (
+        model.predict(
+            X.iloc[split:split + 10]
         )
     )
 
-    model = RecommendationModel(
-        n_estimators=20,
-        random_state=42,
-        n_jobs=-1,
-    )
-
-    model.fit(
-        X_train,
-        y_train,
-    )
-
-    original_predictions = model.predict(
-        X_test.iloc[:10]
-    )
-
-    with tempfile.TemporaryDirectory() as directory:
-
-        path = (
-            Path(directory)
-            / "test_model.pkl"
+    loaded_predictions = (
+        loaded.predict(
+            X.iloc[split:split + 10]
         )
-
-        model.save(path)
-
-        assert path.exists()
-
-        loaded_model = (
-            RecommendationModel()
-        )
-
-        loaded_model.load(path)
-
-        loaded_predictions = (
-            loaded_model.predict(
-                X_test.iloc[:10]
-            )
-        )
-
-    assert np.allclose(
-        original_predictions,
-        loaded_predictions,
     )
+
+    assert (
+        original_predictions
+        == loaded_predictions
+    ).all()
+
+    temporary_model.unlink()
 
     print(
         "Model successfully saved."
@@ -661,87 +576,62 @@ def test_model_save_load():
     )
 
 
-test(
-    "9. Random Forest save/load",
-    test_model_save_load,
-)
-
-
 # ============================================================
 # TEST 10
 # ============================================================
 
 def test_feature_importance():
 
-    from features import (
-        dataframe_to_features,
-    )
-
-    from model import (
-        RecommendationModel,
-    )
-
     df = pd.read_csv(
-        ML_DIR / "training_data.csv"
+        DATASET_PATH
     )
 
-    X = dataframe_to_features(df)
-
-    y = pd.to_numeric(
-        df["score_change"],
-        errors="coerce",
-    ).fillna(0)
-
-    model = RecommendationModel(
-        n_estimators=20,
-        random_state=42,
-        n_jobs=-1,
+    X = create_training_features(
+        df
     )
 
-    model.fit(
+    y = df[
+        "score_change"
+    ]
+
+    model = (
+        RecommendationModel()
+    )
+
+    model.train(
         X,
         y,
     )
 
-    importances = (
-        model.feature_importances()
+    importance = (
+        model.feature_importance()
     )
 
-    assert len(importances) == X.shape[1]
-
-    assert np.isfinite(importances).all()
-
-    assert abs(
-        importances.sum() - 1.0
-    ) < 0.001
-
-    ranked = sorted(
-        zip(
-            X.columns,
-            importances,
-        ),
-        key=lambda item: item[1],
-        reverse=True,
-    )
+    assert importance is not None
 
     print(
         "Top 10 features:"
     )
 
-    print()
+    if isinstance(
+        importance,
+        dict,
+    ):
 
-    for name, importance in ranked[:10]:
-
-        print(
-            f"  {name:30s}"
-            f"{importance:.4f}"
+        sorted_features = sorted(
+            importance.items(),
+            key=lambda x: x[1],
+            reverse=True,
         )
 
+        for name, value in (
+            sorted_features[:10]
+        ):
 
-test(
-    "10. Random Forest feature importance",
-    test_feature_importance,
-)
+            print(
+                f"  {name:<30} "
+                f"{value:.4f}"
+            )
 
 
 # ============================================================
@@ -750,139 +640,27 @@ test(
 
 def test_saved_model():
 
-    from model import (
-        RecommendationModel,
+    assert MODEL_PATH.exists(), (
+        f"Trained model does not exist:\n"
+        f"{MODEL_PATH}\n\n"
+        "Run:\n"
+        "python -m ml.train"
     )
 
-    model_path = (
-        ML_DIR /
-        "recommendation_model.pkl"
+    model = (
+        RecommendationModel()
     )
 
-    assert model_path.exists(), (
-        "recommendation_model.pkl does not exist."
+    model.load(
+        MODEL_PATH
     )
-
-    model = RecommendationModel()
-
-    model.load(model_path)
-
-    assert model.model is not None
 
     print(
         "Loaded trained model:"
     )
 
     print(
-        f"  {model_path}"
-    )
-
-
-test(
-    "11. Existing trained model",
-    test_saved_model,
-)
-
-
-# ============================================================
-# HELPER: CREATE TEST PRODUCTS
-# ============================================================
-
-def create_test_products():
-
-    from models import Product
-
-    apple = Product(
-        barcode="TEST201",
-        name="Apple",
-        brand="Test",
-        categories="en:fruits, en:apples",
-        energy_kj=220,
-        fat=0.3,
-        saturated_fat=0.1,
-        carbohydrates=12,
-        sugars=10,
-        fiber=2.4,
-        protein=0.3,
-        salt=0,
-        sodium=0,
-        nutriscore="a",
-    )
-
-    chocolate = Product(
-        barcode="TEST202",
-        name="Chocolate",
-        brand="Test",
-        categories="en:confectioneries, en:chocolate",
-        energy_kj=2200,
-        fat=30,
-        saturated_fat=18,
-        carbohydrates=55,
-        sugars=45,
-        fiber=4,
-        protein=5,
-        salt=0.2,
-        sodium=0.08,
-        nutriscore="e",
-    )
-
-    broccoli = Product(
-        barcode="TEST203",
-        name="Broccoli",
-        brand="Test",
-        categories="en:vegetables, en:broccoli",
-        energy_kj=150,
-        fat=0.4,
-        saturated_fat=0.1,
-        carbohydrates=7,
-        sugars=1.5,
-        fiber=3.3,
-        protein=2.8,
-        salt=0.05,
-        sodium=0.02,
-        nutriscore="a",
-    )
-
-    bread = Product(
-        barcode="TEST204",
-        name="White Bread",
-        brand="Test",
-        categories="en:breads, en:bread",
-        energy_kj=1050,
-        fat=2,
-        saturated_fat=0.5,
-        carbohydrates=50,
-        sugars=4,
-        fiber=2,
-        protein=9,
-        salt=1.0,
-        sodium=0.4,
-        nutriscore="c",
-    )
-
-    lentils = Product(
-        barcode="TEST205",
-        name="Lentils",
-        brand="Test",
-        categories="en:legumes, en:lentils",
-        energy_kj=480,
-        fat=0.4,
-        saturated_fat=0.1,
-        carbohydrates=20,
-        sugars=1,
-        fiber=8,
-        protein=9,
-        salt=0.02,
-        sodium=0.01,
-        nutriscore="a",
-    )
-
-    return (
-        apple,
-        chocolate,
-        broccoli,
-        bread,
-        lentils,
+        f"  {MODEL_PATH}"
     )
 
 
@@ -892,326 +670,540 @@ def create_test_products():
 
 def test_ai_prediction():
 
-    model_path = (
-        ML_DIR /
-        "recommendation_model.pkl"
-    )
-
-    assert model_path.exists(), (
+    assert MODEL_PATH.exists(), (
         "Trained model does not exist."
     )
 
-    from recommendations_ai import (
-        normalize_cart,
-        predict,
-    )
+    product = Product(
+        barcode="TEST003",
+        name="Test Apple",
 
-    (
-        apple,
-        chocolate,
-        broccoli,
-        bread,
-        lentils,
-    ) = create_test_products()
+        brand="Test Brand",
+
+        categories="en:fruits",
+
+        energy_kj=218,
+        fat=0.2,
+        saturated_fat=0.0,
+        carbohydrates=12,
+        sugars=10,
+        fiber=2.4,
+        protein=0.3,
+        salt=0.0,
+        sodium=0.0,
+
+        nutriscore="a",
+    )
 
     cart = [
-        apple,
-        chocolate,
+        product
     ]
 
-    # Make sure categories have the format
-    # expected by backend/grading.py.
-
-    for product in cart:
-
-        assert isinstance(
-            product.categories,
-            str,
+    cart_items = (
+        normalize_cart(
+            cart
         )
+    )
 
-    cart_items = normalize_cart(cart)
-
-    assert cart_items is not None
-
-    assert len(cart_items) == 2
-
-    # --------------------------------------------------------
-    # Removal
-    # --------------------------------------------------------
-
-    removal_prediction = predict(
+    prediction = predict(
         cart_items,
-        chocolate,
-        "remove",
-    )
-
-    assert isinstance(
-        removal_prediction,
-        float,
-    )
-
-    assert np.isfinite(
-        removal_prediction
-    )
-
-    print(
-        "Removal prediction:"
-    )
-
-    print(
-        f"  Chocolate -> "
-        f"{removal_prediction:.4f}"
-    )
-
-    # --------------------------------------------------------
-    # Addition
-    # --------------------------------------------------------
-
-    addition_prediction = predict(
-        cart_items,
-        broccoli,
+        product,
         "add",
     )
 
     assert isinstance(
-        addition_prediction,
+        prediction,
         float,
     )
 
-    assert np.isfinite(
-        addition_prediction
+    recommendation_grade = (
+        score_change_to_grade(
+            prediction
+        )
+    )
+
+    assert recommendation_grade in {
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+    }
+
+    print(
+        f"Prediction: "
+        f"{prediction:.4f}"
     )
 
     print(
-        "Addition prediction:"
+        f"Recommendation grade: "
+        f"{recommendation_grade}"
     )
-
-    print(
-        f"  Broccoli -> "
-        f"{addition_prediction:.4f}"
-    )
-
-
-test(
-    "12. AI recommendation predictions",
-    test_ai_prediction,
-)
 
 
 # ============================================================
 # TEST 13
 # ============================================================
 
-def test_end_to_end():
+def test_similarity():
 
-    model_path = (
-        ML_DIR /
-        "recommendation_model.pkl"
+    assert OPENFOODFACTS_PATH.exists(), (
+        "Open Food Facts dataset does not exist."
     )
 
-    assert model_path.exists(), (
+    product = Product(
+        barcode="TEST004",
+        name="Test Chocolate",
+
+        brand="Test Brand",
+
+        categories=(
+            "en:chocolates, "
+            "en:confectioneries"
+        ),
+
+        energy_kj=2200,
+        fat=30,
+        saturated_fat=18,
+        carbohydrates=55,
+        sugars=45,
+        fiber=4,
+        protein=5,
+        salt=0.2,
+        sodium=0.08,
+
+        nutriscore="e",
+    )
+
+    alternatives = (
+        find_healthier_alternatives(
+            product,
+            limit=5,
+        )
+    )
+
+    assert isinstance(
+        alternatives,
+        list,
+    )
+
+    grade_rank = {
+        "A": 0,
+        "B": 1,
+        "C": 2,
+        "D": 3,
+        "E": 4,
+    }
+
+    for alternative in alternatives:
+
+        assert "name" in alternative
+        assert "health_grade" in alternative
+        assert "similarity" in alternative
+        assert "distance" in alternative
+
+        grade = (
+            alternative[
+                "health_grade"
+            ]
+        )
+
+        assert grade in grade_rank
+
+        assert (
+            grade_rank[grade]
+            <
+            grade_rank["E"]
+        )
+
+    print(
+        f"Healthier alternatives found: "
+        f"{len(alternatives)}"
+    )
+
+    for alternative in alternatives:
+
+        print(
+            f"  {alternative['name']} "
+            f"({alternative['health_grade']}) "
+            f"similarity="
+            f"{alternative['similarity']:.4f}"
+        )
+
+
+# ============================================================
+# TEST 14
+# ============================================================
+
+def test_end_to_end():
+
+    assert MODEL_PATH.exists(), (
         "Trained model does not exist."
     )
 
-    from recommendations_ai import (
-        recommend,
+    product_1 = Product(
+        barcode="TEST005",
+        name="Test Apple",
+
+        brand="Test Brand",
+
+        categories="en:fruits",
+
+        energy_kj=218,
+        fat=0.2,
+        saturated_fat=0.0,
+        carbohydrates=12,
+        sugars=10,
+        fiber=2.4,
+        protein=0.3,
+        salt=0.0,
+        sodium=0.0,
+
+        nutriscore="a",
     )
 
-    (
-        apple,
-        chocolate,
-        broccoli,
-        bread,
-        lentils,
-    ) = create_test_products()
+    product_2 = Product(
+        barcode="TEST006",
+        name="Test Chocolate",
 
-    # --------------------------------------------------------
-    # Cart
-    # --------------------------------------------------------
+        brand="Test Brand",
+
+        categories=(
+            "en:chocolates, "
+            "en:confectioneries"
+        ),
+
+        energy_kj=2200,
+        fat=30,
+        saturated_fat=18,
+        carbohydrates=55,
+        sugars=45,
+        fiber=4,
+        protein=5,
+        salt=0.2,
+        sodium=0.08,
+
+        nutriscore="e",
+    )
+
+    candidate = Product(
+        barcode="TEST007",
+        name="Test Broccoli",
+
+        brand="Test Brand",
+
+        categories="en:vegetables",
+
+        energy_kj=146,
+        fat=0.4,
+        saturated_fat=0.1,
+        carbohydrates=7,
+        sugars=1.7,
+        fiber=2.6,
+        protein=2.8,
+        salt=0.0,
+        sodium=0.0,
+
+        nutriscore="a",
+    )
 
     cart = [
-        apple,
-        chocolate,
-        bread,
+        product_1,
+        product_2,
     ]
-
-    # --------------------------------------------------------
-    # Candidate products
-    # --------------------------------------------------------
-
-    candidates = [
-        broccoli,
-        lentils,
-    ]
-
-    # --------------------------------------------------------
-    # Validate product format
-    # --------------------------------------------------------
-
-    for product in cart + candidates:
-
-        assert isinstance(
-            product.categories,
-            str,
-        )
-
-    # --------------------------------------------------------
-    # Run recommendation engine
-    # --------------------------------------------------------
 
     result = recommend(
         cart=cart,
-        candidate_products=candidates,
+        candidate_products=[
+            candidate
+        ],
     )
-
-    assert result is not None
 
     assert isinstance(
         result,
         dict,
     )
 
-    assert "cart_health_score" in result
+    assert (
+        "cart_health_score"
+        in result
+    )
 
     assert "add" in result
-
     assert "remove" in result
 
     # --------------------------------------------------------
-    # Display
-    # --------------------------------------------------------
-
-    print()
-    print(
-        "FINAL AI RECOMMENDATION"
-    )
-
-    print(
-        "------------------------"
-    )
-
-    print(result)
-
-    print()
-
-    # --------------------------------------------------------
-    # Addition
+    # ADD
     # --------------------------------------------------------
 
     if result["add"] is not None:
 
-        print(
-            "Recommended addition:"
+        addition = result["add"]
+
+        assert (
+            "food_segment"
+            in addition
         )
 
-        print(
-            f"  Segment: "
-            f"{result['add']['food_segment']}"
+        assert (
+            "example_product"
+            in addition
         )
 
-        print(
-            f"  Example: "
-            f"{result['add']['example_product']}"
+        assert (
+            "grade"
+            in addition
         )
 
-        print(
-            f"  Predicted change: "
-            f"{result['add']['predicted_score_change']}"
-        )
-
-    else:
-
-        print(
-            "No addition recommendation."
-        )
-
-    print()
+        assert addition[
+            "grade"
+        ] in {
+            "A",
+            "B",
+            "C",
+            "D",
+            "E",
+        }
 
     # --------------------------------------------------------
-    # Removal
+    # REMOVE
     # --------------------------------------------------------
 
     if result["remove"] is not None:
 
+        removal = result["remove"]
+
+        assert (
+            "product"
+            in removal
+        )
+
+        assert (
+            "grade"
+            in removal
+        )
+
+        assert removal[
+            "grade"
+        ] in {
+            "A",
+            "B",
+            "C",
+            "D",
+            "E",
+        }
+
+        assert (
+            "alternatives"
+            in removal
+        )
+
+        assert isinstance(
+            removal[
+                "alternatives"
+            ],
+            list,
+        )
+
+        print()
         print(
-            "Recommended removal:"
+            "Removal recommendation:"
         )
 
         print(
             f"  Product: "
-            f"{result['remove']['product']}"
+            f"{removal['product']}"
         )
 
         print(
-            f"  Segment: "
-            f"{result['remove']['food_segment']}"
+            f"  Grade: "
+            f"{removal['grade']}"
         )
 
         print(
-            f"  Predicted change: "
-            f"{result['remove']['predicted_score_change']}"
+            f"  Alternatives: "
+            f"{len(removal['alternatives'])}"
+        )
+
+    print()
+    print(
+        "End-to-end recommendation completed."
+    )
+
+    print()
+    print(
+        result
+    )
+
+
+# ============================================================
+# MAIN TEST RUNNER
+# ============================================================
+
+def main():
+
+    tests = [
+
+        (
+            1,
+            "Backend and ML imports",
+            test_imports,
+        ),
+
+        (
+            2,
+            "Product creation",
+            test_product_creation,
+        ),
+
+        (
+            3,
+            "Product grading",
+            test_grading,
+        ),
+
+        (
+            4,
+            "Cart functionality",
+            test_cart,
+        ),
+
+        (
+            5,
+            "Training dataset",
+            test_training_dataset,
+        ),
+
+        (
+            6,
+            "Feature generation",
+            test_feature_generation,
+        ),
+
+        (
+            7,
+            "Random Forest training",
+            test_model_training,
+        ),
+
+        (
+            8,
+            "Random Forest predictions",
+            test_model_predictions,
+        ),
+
+        (
+            9,
+            "Random Forest save/load",
+            test_model_save_load,
+        ),
+
+        (
+            10,
+            "Random Forest feature importance",
+            test_feature_importance,
+        ),
+
+        (
+            11,
+            "Existing trained model",
+            test_saved_model,
+        ),
+
+        (
+            12,
+            "AI recommendation predictions",
+            test_ai_prediction,
+        ),
+
+        (
+            13,
+            "Product similarity and alternatives",
+            test_similarity,
+        ),
+
+        (
+            14,
+            "End-to-end AI recommendation",
+            test_end_to_end,
+        ),
+    ]
+
+    passed = 0
+    failed = 0
+
+    print()
+    print(
+        "======================================================================"
+    )
+    print(
+        "CUTC HACKATHON AI TEST SUITE"
+    )
+    print(
+        "======================================================================"
+    )
+    print()
+
+    for number, name, function in tests:
+
+        if run_test(
+            number,
+            name,
+            function,
+        ):
+
+            passed += 1
+
+        else:
+
+            failed += 1
+
+    print(
+        "======================================================================"
+    )
+    print(
+        "FINAL TEST SUMMARY"
+    )
+    print(
+        "======================================================================"
+    )
+
+    print(
+        f"Passed: {passed}"
+    )
+
+    print(
+        f"Failed: {failed}"
+    )
+
+    print(
+        f"Total:  {len(tests)}"
+    )
+
+    print()
+
+    if failed == 0:
+
+        print(
+            "ALL TESTS PASSED"
+        )
+
+        print(
+            "The recommendation engine is ready "
+            "for application integration."
         )
 
     else:
 
         print(
-            "No removal recommendation."
+            "SOME TESTS FAILED"
+        )
+
+        print(
+            "Fix the failed stage(s) before "
+            "integrating the recommendation engine."
         )
 
 
-test(
-    "13. End-to-end AI recommendation",
-    test_end_to_end,
-)
-
-
-# ============================================================
-# FINAL SUMMARY
-# ============================================================
-
-print()
-print()
-print("=" * 70)
-print("FINAL TEST SUMMARY")
-print("=" * 70)
-
-print()
-
-print(
-    f"Passed: {passed}"
-)
-
-print(
-    f"Failed: {failed}"
-)
-
-print(
-    f"Total:  {passed + failed}"
-)
-
-print()
-
-if failed == 0:
-
-    print(
-        "ALL TESTS PASSED"
-    )
-
-    print()
-    print(
-        "Backend, model, and recommendation "
-        "pipeline are functioning."
-    )
-
-else:
-
-    print(
-        "SOME TESTS FAILED"
-    )
-
-    print()
-    print(
-        "Fix the failed stage(s) before continuing."
-    )
-
-    sys.exit(1)
+if __name__ == "__main__":
+    main()

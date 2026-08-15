@@ -33,3 +33,32 @@ class Product:
     ingredients: Optional[str] = None
     categories: Optional[str] = None
     countries: Optional[str] = None
+
+    def __post_init__(self):
+        """
+        Round nutritional values to 2 decimal places.
+
+        This keeps product data clean and prevents long floating-point
+        values from appearing throughout the application.
+        """
+
+        nutrition_fields = [
+            "energy_kj",
+            "fat",
+            "saturated_fat",
+            "carbohydrates",
+            "sugars",
+            "fiber",
+            "protein",
+            "salt",
+            "sodium",
+        ]
+
+        for field in nutrition_fields:
+            value = getattr(self, field)
+
+            if value is not None:
+                try:
+                    setattr(self, field, round(float(value), 2))
+                except (TypeError, ValueError):
+                    setattr(self, field, None)
